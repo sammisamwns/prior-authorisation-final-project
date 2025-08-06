@@ -1,292 +1,285 @@
-# 🏥 Prior Authorization System - JWT Authentication
+# Healthcare Portal - Prior Authorization System
 
-A complete healthcare prior authorization system with JWT authentication, featuring a Flask backend API and React frontend.
+A modern, full-stack healthcare portal for managing prior authorizations with a professional UI and comprehensive features.
 
-## 🎯 Project Overview
+## 🏥 Features
 
-This system demonstrates a secure JWT-based authentication flow for healthcare prior authorization, supporting both **Member** and **Provider** user roles.
+### Authentication & Security
+- **JWT-based authentication** with secure token management
+- **Password hashing** using Werkzeug security utilities
+- **Protected routes** with role-based access control
+- **HIPAA-compliant** security measures
 
-## 📁 Project Structure
+### User Management
+- **Multi-role support**: Patients, Providers, and Administrators
+- **User registration and login** with validation
+- **Profile management** with editable information
+- **Role-specific dashboards** and permissions
 
-```
-prior-authorisation-final-project/
-├── backend/                 # Flask JWT Authentication API
-│   ├── app.py              # Main Flask application
-│   ├── jwt_utils.py        # JWT validation utilities
-│   ├── test_token_generator.py # Token generation script
-│   ├── requirements.txt    # Python dependencies
-│   ├── env.example         # Environment variables template
-│   ├── README.md           # Backend documentation
-│   └── venv/               # Virtual environment
-├── frontend/               # React JWT Authentication UI
-│   ├── src/
-│   │   ├── App.js          # Main React application
-│   │   ├── Login.js        # Login component
-│   │   ├── Dashboard.js    # Dashboard component
-│   │   ├── PrivateRoute.js # Route protection
-│   │   ├── api.js          # API service functions
-│   │   └── *.css           # Component styles
-│   ├── package.json        # Node.js dependencies
-│   └── README.md           # Frontend documentation
-├── .gitignore              # Git ignore rules
-└── README.md               # This file
-```
+### Prior Authorization Management
+- **Comprehensive authorization tracking** with status updates
+- **Drug formulary integration** with detailed information
+- **Search and filtering** capabilities
+- **Real-time status updates** (Approved, Pending, Denied)
+
+### Professional UI/UX
+- **Modern glass-morphism design** with gradient backgrounds
+- **Responsive layout** that works on all devices
+- **Interactive components** with smooth animations
+- **Professional healthcare theme** with intuitive navigation
+
+### Analytics & Reporting
+- **Real-time analytics** with key metrics
+- **Status distribution charts** and trends
+- **Drug class analysis** and usage patterns
+- **Export capabilities** (PDF, Excel)
+- **Monthly trend analysis**
 
 ## 🚀 Quick Start
 
 ### Prerequisites
+- **Node.js** (v16 or higher)
+- **Python** (v3.8 or higher)
+- **MongoDB** (v4.4 or higher)
+- **npm** or **yarn**
 
-- **Python 3.8+** with pip
-- **Node.js 14+** with npm
-- **Git**
+### Installation
 
-### 1. Clone and Setup
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd prior-authorisation-final-project
+   ```
 
-```bash
-git clone <repository-url>
-cd prior-authorisation-final-project
+2. **Start MongoDB**
+   ```bash
+   sudo systemctl start mongod
+   sudo systemctl enable mongod
+   ```
+
+3. **Backend Setup**
+   ```bash
+   cd healthcare-portal-backend
+   
+   # Create virtual environment
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   
+   # Install dependencies
+   pip install -r requirements.txt
+   
+   # Initialize database with sample data
+   python init_db.py
+   
+   # Start the backend server
+   python app.py
+   ```
+
+4. **Frontend Setup**
+   ```bash
+   cd healthcare-portal-frontend
+   
+   # Install dependencies
+   npm install
+   
+   # Start the development server
+   npm start
+   ```
+
+5. **Access the Application**
+   - Frontend: http://localhost:3000
+   - Backend API: http://localhost:5000
+
+## 📊 Sample Data
+
+The database initialization script creates sample users with the following credentials:
+
+### Provider Accounts
+- **Email**: sarah.johnson@healthcare.com | **Password**: password123
+- **Email**: michael.chen@healthcare.com | **Password**: password123
+
+### Patient Accounts
+- **Email**: emily.rodriguez@patient.com | **Password**: password123
+- **Email**: james.wilson@patient.com | **Password**: password123
+- **Email**: lisa.thompson@patient.com | **Password**: password123
+
+## 🏗️ Project Structure
+
+```
+prior-authorisation-final-project/
+├── healthcare-portal-backend/
+│   ├── app.py                 # Main Flask application
+│   ├── init_db.py            # Database initialization script
+│   ├── requirements.txt      # Python dependencies
+│   ├── .env                  # Environment variables
+│   └── venv/                 # Virtual environment
+├── healthcare-portal-frontend/
+│   ├── src/
+│   │   ├── components/       # Reusable UI components
+│   │   │   ├── Header.js
+│   │   │   └── Sidebar.js
+│   │   ├── pages/           # Page components
+│   │   │   ├── Authorizations.js
+│   │   │   ├── Drugs.js
+│   │   │   ├── Profile.js
+│   │   │   └── Reports.js
+│   │   ├── App.js           # Main application component
+│   │   ├── Login.js         # Login page
+│   │   ├── Signup.js        # Signup page
+│   │   ├── Dashboard.js     # Dashboard page
+│   │   ├── PrivateRoute.js  # Route protection
+│   │   ├── index.js         # Application entry point
+│   │   └── index.css        # Global styles
+│   ├── public/
+│   │   └── index.html       # HTML template
+│   └── package.json         # Node.js dependencies
+└── README.md               # Project documentation
 ```
 
-### 2. Backend Setup
+## 🔧 API Endpoints
 
-```bash
-cd backend
+### Authentication
+- `POST /signup` - User registration
+- `POST /login` - User authentication
+- `GET /dashboard-data` - Protected user data
 
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+### Prior Authorizations
+- `GET /prior-authorizations` - Get user's authorizations
+- `GET /drugs` - Get drug formulary
+- `GET /users` - Get all users (admin only)
 
-# Install dependencies
-pip install -r requirements.txt
+### Health & Monitoring
+- `GET /health` - Health check endpoint
 
-# Set up environment variables
-cp env.example .env
-# Edit .env with your secret keys
+## 🎨 UI Components
 
-# Start Flask server
-python app.py
-```
+### Design System
+- **Glass-morphism effects** with backdrop blur
+- **Gradient backgrounds** for visual appeal
+- **Professional color scheme** with healthcare theme
+- **Responsive grid layouts** for all screen sizes
 
-**Backend will run on:** `http://localhost:5000`
+### Interactive Elements
+- **Animated loading spinners** and transitions
+- **Hover effects** and micro-interactions
+- **Status badges** with color coding
+- **Professional form inputs** with validation
 
-### 3. Frontend Setup
-
-```bash
-cd frontend
-
-# Install dependencies
-npm install
-
-# Start React development server
-npm start
-```
-
-**Frontend will run on:** `http://localhost:3000`
-
-## 🔐 Authentication Flow
-
-### 1. **JWT Token Generation**
-- Backend provides `/auth/token` endpoint
-- Generates tokens for Member/Provider roles
-- Tokens include user ID, role, email, and expiration
-
-### 2. **Frontend Login**
-- User selects role (Member/Provider)
-- Can use sample tokens or generate new ones
-- Token stored securely in localStorage
-
-### 3. **Protected API Calls**
-- Frontend automatically includes JWT in requests
-- Backend validates token on each request
-- Role-based access control enforced
-
-### 4. **Dashboard Access**
-- Authenticated users see personalized dashboard
-- Real-time API testing capabilities
-- User information displayed from JWT payload
-
-## 🧪 Testing the System
-
-### Option 1: Use Sample Tokens (Quick Test)
-
-1. **Start both servers** (backend + frontend)
-2. **Navigate to** `http://localhost:3000`
-3. **Click "Use Sample Member Token"** or "Use Sample Provider Token"
-4. **Click "Login"**
-5. **View dashboard** with API responses
-
-### Option 2: Generate New Tokens
-
-1. **Start both servers**
-2. **Navigate to** `http://localhost:3000`
-3. **Select role** and **enter email**
-4. **Click "Show Token Generator"**
-5. **Click "Generate New Token"**
-6. **Click "Login"**
-
-### Option 3: Manual API Testing
-
-```bash
-# Generate token
-curl -X POST http://localhost:5000/auth/token \
-  -H "Content-Type: application/json" \
-  -d '{"user_id": "user123", "role": "member", "email": "test@example.com"}'
-
-# Use token
-curl -X POST http://localhost:5000/prior-auth \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE"
-```
+### Navigation
+- **Sidebar navigation** with role-based menu items
+- **Header with user menu** and notifications
+- **Breadcrumb navigation** for complex workflows
+- **Mobile-responsive** navigation patterns
 
 ## 🔒 Security Features
 
-### Backend Security
-- ✅ **JWT Token Validation**: Secure signature verification
-- ✅ **Token Expiration**: Automatic expiration handling
-- ✅ **Role-Based Access**: Member/Provider role enforcement
-- ✅ **Environment Variables**: Secure configuration management
-- ✅ **Error Handling**: Graceful error responses
+### Authentication
+- **JWT tokens** with expiration handling
+- **Secure password hashing** using Werkzeug
+- **Token-based route protection**
+- **Automatic logout** on token expiration
 
-### Frontend Security
-- ✅ **Protected Routes**: Automatic redirection for unauthenticated users
-- ✅ **Token Management**: Secure localStorage handling
-- ✅ **Request Interceptors**: Automatic JWT inclusion
-- ✅ **Response Interceptors**: 401 error handling
-- ✅ **Input Validation**: Form validation and sanitization
+### Data Protection
+- **CORS configuration** for secure API access
+- **Input validation** and sanitization
+- **Environment variable** management
+- **Database connection** security
 
-## 🎨 User Interface
+## 📱 Responsive Design
 
-### Login Page Features
-- **Modern Design**: Clean, healthcare-themed interface
-- **Role Selection**: Member/Provider dropdown
-- **Token Input**: Large textarea for JWT tokens
-- **Sample Tokens**: One-click testing with pre-generated tokens
-- **Token Generator**: Generate new tokens from backend
-- **Error Handling**: Clear error messages and validation
-
-### Dashboard Features
-- **User Information**: Display JWT payload data
-- **API Response**: Real-time protected endpoint testing
-- **Profile Data**: Role-specific profile information
-- **Backend Status**: Real-time health monitoring
-- **Quick Actions**: Test API endpoints and refresh data
-- **Responsive Design**: Works on all screen sizes
-
-## 📊 API Endpoints
-
-### Public Endpoints
-- `GET /health` - Backend health check
-- `POST /auth/token` - Generate JWT tokens
-
-### Protected Endpoints
-- `POST /prior-auth` - Main protected endpoint
-- `GET /member/profile` - Member profile data
-- `GET /provider/profile` - Provider profile data
-
-## 🔧 Configuration
-
-### Backend Environment Variables
-```env
-JWT_SECRET_KEY=your_super_secret_jwt_key
-FLASK_SECRET_KEY=your_flask_secret_key
-FLASK_DEBUG=True
-PORT=5000
-```
-
-### Frontend Configuration
-```javascript
-// src/api.js
-const API_BASE_URL = 'http://localhost:5000';
-```
+The application is fully responsive and optimized for:
+- **Desktop computers** (1920px and above)
+- **Laptops** (1366px - 1919px)
+- **Tablets** (768px - 1365px)
+- **Mobile phones** (320px - 767px)
 
 ## 🚀 Deployment
 
 ### Backend Deployment
-```bash
-cd backend
-pip install gunicorn
-gunicorn -w 4 -b 0.0.0.0:5000 app:app
-```
+1. Set up a production MongoDB instance
+2. Configure environment variables
+3. Use a production WSGI server (Gunicorn)
+4. Set up reverse proxy (Nginx)
 
 ### Frontend Deployment
+1. Build the production version: `npm run build`
+2. Deploy to a static hosting service
+3. Configure environment variables for API endpoints
+
+## 🛠️ Development
+
+### Backend Development
 ```bash
-cd frontend
-npm run build
-# Serve build folder with nginx or similar
+cd healthcare-portal-backend
+source venv/bin/activate
+python app.py
 ```
 
-## 🔄 Development Workflow
+### Frontend Development
+```bash
+cd healthcare-portal-frontend
+npm start
+```
 
-### Adding New Features
+### Database Management
+```bash
+# Initialize with sample data
+python init_db.py
 
-1. **Backend Changes**:
-   - Add new endpoints in `app.py`
-   - Update JWT utilities if needed
-   - Test with curl or Postman
+# Access MongoDB shell
+mongosh healthcareDB
+```
 
-2. **Frontend Changes**:
-   - Add new components in `src/`
-   - Update API functions in `api.js`
-   - Test with React development server
+## 📈 Analytics & Reporting
 
-3. **Integration Testing**:
-   - Test full authentication flow
-   - Verify role-based access
-   - Check error handling
+The application includes comprehensive analytics:
+- **Real-time metrics** dashboard
+- **Status distribution** charts
+- **Drug class analysis**
+- **Monthly trend** visualization
+- **Export functionality** for reports
 
-## 🐛 Troubleshooting
+## 🔧 Configuration
 
-### Common Issues
+### Environment Variables
+Create a `.env` file in the backend directory:
+```env
+MONGO_URI=mongodb://localhost:27017/healthcareDB
+JWT_SECRET_KEY=your-super-secret-and-long-jwt-key-goes-here
+```
 
-1. **Backend Connection Failed**:
-   - Check if Flask server is running on port 5000
-   - Verify virtual environment is activated
-   - Check for port conflicts
-
-2. **Frontend Build Errors**:
-   - Clear `node_modules` and reinstall
-   - Check Node.js version compatibility
-   - Verify all dependencies are installed
-
-3. **JWT Token Issues**:
-   - Check token expiration
-   - Verify secret keys match
-   - Ensure proper token format
-
-4. **CORS Errors**:
-   - Backend needs CORS configuration for production
-   - Check browser console for CORS errors
-
-## 📈 Next Steps
-
-This system is ready for **Step 3: MongoDB Integration**:
-
-- **Database Integration**: Connect to MongoDB for user storage
-- **Real Authentication**: Implement actual user login/logout
-- **Healthcare Data**: Add prior authorization forms and workflows
-- **Advanced Features**: Add approval workflows, notifications, etc.
+### API Configuration
+The frontend is configured to connect to `http://localhost:5000` by default. Update the API base URL in production.
 
 ## 🤝 Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Test thoroughly
+4. Add tests if applicable
 5. Submit a pull request
 
 ## 📄 License
 
-This project is for educational purposes. Please ensure compliance with healthcare data regulations in production use.
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 🆘 Support
+
+For support and questions:
+- Check the documentation
+- Review the sample data and credentials
+- Ensure all prerequisites are installed
+- Verify MongoDB is running
+
+## 🎯 Roadmap
+
+- [ ] Real-time notifications
+- [ ] Advanced reporting features
+- [ ] Mobile app development
+- [ ] Integration with external systems
+- [ ] Advanced analytics dashboard
+- [ ] Multi-language support
 
 ---
 
-## 🎉 Success!
-
-You now have a complete JWT authentication system with:
-
-- ✅ **Secure Backend API** with JWT validation
-- ✅ **Modern React Frontend** with role-based access
-- ✅ **Real-time API Testing** capabilities
-- ✅ **Professional UI/UX** design
-- ✅ **Comprehensive Documentation**
-
-**Ready to test?** Start both servers and navigate to `http://localhost:3000`! 🚀 
+**Built with ❤️ for the healthcare industry** 
