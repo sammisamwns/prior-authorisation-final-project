@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { API_BASE_URL } from "../api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,7 +7,27 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { User, Shield, FileText, Clock, CheckCircle, Calendar, DollarSign, Activity, Bot } from "lucide-react";
+import { 
+  User, 
+  Shield, 
+  FileText, 
+  Clock, 
+  CheckCircle, 
+  Calendar, 
+  DollarSign, 
+  Activity, 
+  Bot,
+  MessageCircle,
+  Search,
+  Sparkles,
+  History,
+  Building,
+  CreditCard,
+  TrendingUp,
+  PieChart,
+  BarChart3,
+  AlertCircle
+} from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 interface MemberProfile {
@@ -89,6 +110,27 @@ const MemberPortal = () => {
     urgency: "routine",
     additionalNotes: ""
   });
+  
+  // New state for pending requests and AI features
+  const [pendingRequests, setPendingRequests] = useState<any[]>([]);
+  const [providers, setProviders] = useState<any[]>([]);
+  const [isSearchingProviders, setIsSearchingProviders] = useState(false);
+  const [pendingRequest, setPendingRequest] = useState({
+    procedure: "",
+    diagnosis: "",
+    provider_info: "",
+    urgency: "routine",
+    additional_notes: "",
+    member_notes: ""
+  });
+  const [isSubmittingPending, setIsSubmittingPending] = useState(false);
+  
+  // AI features state
+  const [aiMessage, setAiMessage] = useState("");
+  const [aiResponse, setAiResponse] = useState("");
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [autocompleteSuggestion, setAutocompleteSuggestion] = useState("");
+  
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -96,6 +138,7 @@ const MemberPortal = () => {
     fetchMemberData();
     fetchInsurancePlans();
     fetchInsuranceSubscriptions();
+    fetchPendingRequests();
   }, []);
 
   const fetchMemberData = async () => {
@@ -111,7 +154,7 @@ const MemberPortal = () => {
       }
 
       // Fetch member profile
-      const profileResponse = await fetch("http://127.0.0.1:5000/member/profile", {
+  const profileResponse = await fetch(`${API_BASE_URL}/member/profile`, {
         method: "GET",
         headers: {
           "Authorization": `Bearer ${token}`,
@@ -131,7 +174,7 @@ const MemberPortal = () => {
       }
 
       // Fetch member claims
-      const claimsResponse = await fetch("http://127.0.0.1:5000/member/claims", {
+  const claimsResponse = await fetch(`${API_BASE_URL}/member/claims`, {
         method: "GET",
         headers: {
           "Authorization": `Bearer ${token}`,
@@ -161,7 +204,7 @@ const MemberPortal = () => {
       if (!token) return;
 
       setIsLoadingPlans(true);
-      const response = await fetch("http://127.0.0.1:5000/payers/insurance-plans", {
+  const response = await fetch(`${API_BASE_URL}/payers/insurance-plans`, {
         method: "GET",
         headers: {
           "Authorization": `Bearer ${token}`,
@@ -185,7 +228,7 @@ const MemberPortal = () => {
       const token = localStorage.getItem("authToken");
       if (!token) return;
 
-      const response = await fetch("http://127.0.0.1:5000/member/insurance-subscriptions", {
+  const response = await fetch(`${API_BASE_URL}/member/insurance-subscriptions`, {
         method: "GET",
         headers: {
           "Authorization": `Bearer ${token}`,
@@ -207,7 +250,7 @@ const MemberPortal = () => {
       const token = localStorage.getItem("authToken");
       if (!token) return;
 
-      const response = await fetch("http://127.0.0.1:5000/member/subscribe-insurance", {
+  const response = await fetch(`${API_BASE_URL}/member/subscribe-insurance`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${token}`,
@@ -255,7 +298,7 @@ const MemberPortal = () => {
 
     try {
       const token = localStorage.getItem("authToken");
-      const response = await fetch("http://127.0.0.1:5000/prior-auth", {
+  const response = await fetch(`${API_BASE_URL}/prior-auth`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${token}`,
@@ -302,6 +345,192 @@ const MemberPortal = () => {
       });
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // New functions for pending requests and AI features
+  const fetchPendingRequests = async () => {
+    try {
+      const token = localStorage.getItem("authToken");
+      const response = await fetch("API_BASmember/pending-requests", {
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setPendingRequests(data.data || []);
+      }
+    } catch (error) {
+      console.error('Error fetching pending requests:', error);
+    }
+  };
+
+  const searchProviders = async (query: string) => {
+    if (!query.trim()) {
+      setProviders([]);
+      return;
+    }
+
+    try {
+      setIsSearchingProviders(true);
+      const token = localStorage.getItem("authToken");
+  const response = await fetch(`${API_BASE_URL}/provider/search?q=${encodeURIComponent(query)}`, {
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setProviders(data.data || []);
+      }
+    } catch (error) {
+      console.error('Error searching providers:', error);
+    } finally {
+      setIsSearchingProviders(false);
+    }
+  };
+
+  const handleSubmitPendingRequest = async () => {
+    if (!pendingRequest.procedure || !pendingRequest.diagnosis || !pendingRequest.provider_info) {
+      toast({
+        title: "Missing Information",
+        description: "Please fill in all required fields.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSubmittingPending(true);
+
+    try {
+      const token = localStorage.getItem("authToken");
+  const response = await fetch(`${API_BASE_URL}/member/submit-pending-request`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(pendingRequest),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        toast({
+          title: "Pending Request Submitted",
+          description: `Request submitted successfully. Request ID: ${data.request_id}`,
+        });
+        
+        // Reset form
+        setPendingRequest({
+          procedure: "",
+          diagnosis: "",
+          provider_info: "",
+          urgency: "routine",
+          additional_notes: "",
+          member_notes: ""
+        });
+        
+        // Refresh pending requests
+        fetchPendingRequests();
+      } else {
+        toast({
+          title: "Submission Error",
+          description: data.message || "Unable to submit pending request.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Connection Error",
+        description: "Unable to connect to the server.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmittingPending(false);
+    }
+  };
+
+  const handleFormatDescription = async (rawInput: string) => {
+    try {
+      const token = localStorage.getItem("authToken");
+  const response = await fetch(`${API_BASE_URL}/ai/format-description`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ raw_input: rawInput }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return data.formatted;
+      }
+    } catch (error) {
+      console.error('Error formatting description:', error);
+    }
+    return rawInput;
+  };
+
+  const handleGetAutocomplete = async (input: string) => {
+    try {
+      const token = localStorage.getItem("authToken");
+  const response = await fetch(`${API_BASE_URL}/ai/autocomplete?input=${encodeURIComponent(input)}`, {
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setAutocompleteSuggestion(data.suggestion || "");
+      }
+    } catch (error) {
+      console.error('Error getting autocomplete:', error);
+    }
+  };
+
+  const handleHealthBuddyChat = async () => {
+    if (!aiMessage.trim()) return;
+
+    setIsAiLoading(true);
+    try {
+      const token = localStorage.getItem("authToken");
+  const response = await fetch(`${API_BASE_URL}/ai/health-buddy`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ message: aiMessage }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setAiResponse(data.response);
+        setAiMessage("");
+      } else {
+        toast({
+          title: "AI Error",
+          description: "Unable to get AI response.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Connection Error",
+        description: "Unable to connect to AI service.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAiLoading(false);
     }
   };
 
@@ -389,6 +618,28 @@ const MemberPortal = () => {
         >
           <CheckCircle className="w-4 h-4" />
           <span>Submit Request</span>
+        </button>
+        <button
+          onClick={() => setActiveTab("pending-requests")}
+          className={`flex-1 flex items-center justify-center space-x-2 px-4 py-3 rounded-lg font-medium transition-all duration-200 ${
+            activeTab === "pending-requests"
+              ? "bg-white text-blue-600 shadow-sm"
+              : "text-gray-600 hover:text-gray-900"
+          }`}
+        >
+          <Clock className="w-4 h-4" />
+          <span>Pending Requests</span>
+        </button>
+        <button
+          onClick={() => setActiveTab("health-buddy")}
+          className={`flex-1 flex items-center justify-center space-x-2 px-4 py-3 rounded-lg font-medium transition-all duration-200 ${
+            activeTab === "health-buddy"
+              ? "bg-white text-blue-600 shadow-sm"
+              : "text-gray-600 hover:text-gray-900"
+          }`}
+        >
+          <MessageCircle className="w-4 h-4" />
+          <span>AI Health Buddy</span>
         </button>
       </div>
       {/* Tab Content */}
@@ -786,6 +1037,272 @@ const MemberPortal = () => {
                   </>
                 )}
               </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Pending Requests Tab */}
+      {activeTab === "pending-requests" && (
+        <Card className="bg-white shadow-lg border-0 rounded-2xl">
+          <CardHeader>
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-full flex items-center justify-center">
+                <Clock className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <CardTitle>Pending Requests</CardTitle>
+                <CardDescription>
+                  Submit requests that need provider approval before insurance processing
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="pending_procedure" className="text-sm font-medium text-gray-700">
+                  Procedure/Treatment *
+                </Label>
+                <Input
+                  id="pending_procedure"
+                  placeholder="e.g., MRI Scan, Physical Therapy"
+                  value={pendingRequest.procedure}
+                  onChange={(e) => setPendingRequest({...pendingRequest, procedure: e.target.value})}
+                  className="border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="pending_diagnosis" className="text-sm font-medium text-gray-700">
+                  Primary Diagnosis *
+                </Label>
+                <Input
+                  id="pending_diagnosis"
+                  placeholder="e.g., Lower Back Pain, Shoulder Injury"
+                  value={pendingRequest.diagnosis}
+                  onChange={(e) => setPendingRequest({...pendingRequest, diagnosis: e.target.value})}
+                  className="border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="provider_search" className="text-sm font-medium text-gray-700">
+                  Provider (ID, Name, or Email) *
+                </Label>
+                <div className="relative">
+                  <Input
+                    id="provider_search"
+                    placeholder="Search provider by ID, name, or email"
+                    value={pendingRequest.provider_info}
+                    onChange={(e) => {
+                      setPendingRequest({...pendingRequest, provider_info: e.target.value});
+                      searchProviders(e.target.value);
+                    }}
+                    className="border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+                  />
+                  {isSearchingProviders && (
+                    <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                    </div>
+                  )}
+                  {providers.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                      {providers.map((provider) => (
+                        <button
+                          key={provider.provider_id}
+                          type="button"
+                          onClick={() => setPendingRequest({...pendingRequest, provider_info: provider.provider_id})}
+                          className="w-full text-left px-4 py-2 hover:bg-gray-100 border-b border-gray-100 last:border-b-0"
+                        >
+                          <div className="font-medium text-gray-900">{provider.name}</div>
+                          <div className="text-sm text-gray-600">{provider.email}</div>
+                          <div className="text-xs text-gray-500">ID: {provider.provider_id}</div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="pending_urgency" className="text-sm font-medium text-gray-700">
+                  Request Urgency
+                </Label>
+                <select
+                  className="w-full p-3 border border-gray-200 rounded-lg bg-white focus:border-blue-500 focus:ring-blue-500"
+                  value={pendingRequest.urgency}
+                  onChange={(e) => setPendingRequest({...pendingRequest, urgency: e.target.value})}
+                >
+                  <option value="routine">Routine (5-7 days)</option>
+                  <option value="urgent">Urgent (1-2 days)</option>
+                  <option value="emergency">Emergency (Same day)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="pending_notes" className="text-sm font-medium text-gray-700">
+                Additional Notes
+              </Label>
+              <Textarea
+                id="pending_notes"
+                placeholder="Any additional information about your request..."
+                value={pendingRequest.additional_notes}
+                onChange={(e) => setPendingRequest({...pendingRequest, additional_notes: e.target.value})}
+                rows={3}
+                className="border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="member_notes" className="text-sm font-medium text-gray-700">
+                Notes for Provider
+              </Label>
+              <Textarea
+                id="member_notes"
+                placeholder="Any specific notes or requests for the provider..."
+                value={pendingRequest.member_notes}
+                onChange={(e) => setPendingRequest({...pendingRequest, member_notes: e.target.value})}
+                rows={2}
+                className="border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+              />
+            </div>
+
+            <Button
+              onClick={handleSubmitPendingRequest}
+              disabled={isSubmittingPending}
+              className="w-full bg-gradient-to-r from-yellow-500 to-orange-600 hover:from-yellow-600 hover:to-orange-700 text-white font-medium py-3 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl"
+            >
+              {isSubmittingPending ? (
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                  Submitting Request...
+                </>
+              ) : (
+                <>
+                  <Clock className="w-5 h-5 mr-2" />
+                  Submit for Provider Review
+                </>
+              )}
+            </Button>
+
+            {/* Pending Requests List */}
+            {pendingRequests.length > 0 && (
+              <div className="mt-8">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Your Pending Requests</h3>
+                <div className="space-y-4">
+                  {pendingRequests.map((request) => (
+                    <Card key={request.request_id} className="border-l-4 border-yellow-500">
+                      <CardContent className="p-4">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <h4 className="font-semibold text-gray-900">{request.procedure}</h4>
+                            <p className="text-sm text-gray-600">{request.diagnosis}</p>
+                            <p className="text-sm text-gray-500">Provider: {request.provider_name}</p>
+                            <p className="text-sm text-gray-500">Status: {request.status}</p>
+                          </div>
+                          <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">
+                            Pending
+                          </Badge>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* AI Health Buddy Tab */}
+      {activeTab === "health-buddy" && (
+        <Card className="bg-white shadow-lg border-0 rounded-2xl">
+          <CardHeader>
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-gradient-to-r from-green-500 to-blue-500 rounded-full flex items-center justify-center">
+                <MessageCircle className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <CardTitle>AI Health Buddy</CardTitle>
+                <CardDescription>
+                  Get personalized health advice and recommendations based on your medical history
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="space-y-2">
+              <Label htmlFor="ai_message" className="text-sm font-medium text-gray-700">
+                Ask your health buddy
+              </Label>
+              <div className="flex space-x-2">
+                <Textarea
+                  id="ai_message"
+                  placeholder="Ask about symptoms, treatments, or get health recommendations..."
+                  value={aiMessage}
+                  onChange={(e) => setAiMessage(e.target.value)}
+                  rows={3}
+                  className="flex-1 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+                />
+                <Button
+                  onClick={handleHealthBuddyChat}
+                  disabled={isAiLoading || !aiMessage.trim()}
+                  className="bg-gradient-to-r from-green-500 to-blue-600 hover:from-green-600 hover:to-blue-700 text-white"
+                >
+                  {isAiLoading ? (
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  ) : (
+                    <MessageCircle className="w-4 h-4" />
+                  )}
+                </Button>
+              </div>
+            </div>
+
+            {aiResponse && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h4 className="font-semibold text-blue-900 mb-2">AI Response:</h4>
+                <p className="text-blue-800 whitespace-pre-wrap">{aiResponse}</p>
+              </div>
+            )}
+
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h4 className="font-semibold text-gray-900 mb-2">Suggested Questions:</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAiMessage("What are the best exercises for lower back pain?")}
+                  className="text-left justify-start"
+                >
+                  Best exercises for lower back pain?
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAiMessage("What should I do for persistent headaches?")}
+                  className="text-left justify-start"
+                >
+                  Help with persistent headaches
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAiMessage("What are the symptoms of diabetes?")}
+                  className="text-left justify-start"
+                >
+                  Diabetes symptoms to watch for
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAiMessage("How can I improve my sleep quality?")}
+                  className="text-left justify-start"
+                >
+                  Tips for better sleep
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>

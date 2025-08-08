@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { API_BASE_URL } from "../api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -38,7 +39,7 @@ const PayerPortal = () => {
   const fetchRequests = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://127.0.0.1:5000/payer/requests', {
+  const response = await fetch(`${API_BASE_URL}/payer/requests`, {
         headers: { 
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -65,7 +66,7 @@ const PayerPortal = () => {
 
   const fetchInsuranceSubscriptions = async () => {
     try {
-      const response = await fetch('http://127.0.0.1:5000/payer/subscriptions', {
+  const response = await fetch(`${API_BASE_URL}/payer/subscriptions`, {
         headers: { 
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'

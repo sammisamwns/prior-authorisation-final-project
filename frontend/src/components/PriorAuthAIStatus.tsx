@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { API_BASE_URL } from "../api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -33,7 +34,7 @@ const PriorAuthAIStatus = () => {
   const fetchPriorAuths = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://127.0.0.1:5000/ai-status', {
+  const response = await fetch(`${API_BASE_URL}/ai-status`, {
         headers: { 
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -60,7 +61,7 @@ const PriorAuthAIStatus = () => {
 
   const handleDecision = async (authId: string, decision: 'approved' | 'denied') => {
     try {
-      const response = await fetch('http://127.0.0.1:5000/prior-auth/decision', {
+  const response = await fetch(`${API_BASE_URL}/prior-auth/decision`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

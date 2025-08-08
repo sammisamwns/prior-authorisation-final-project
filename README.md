@@ -62,14 +62,14 @@ A modern, full-stack healthcare portal for managing prior authorizations with a 
    cd backend
    
    # Create virtual environment
-   python -m venv venv
+   python3 -m venv venv
    source venv/bin/activate || ./venv/Scripts/activate 
    
    # Install dependencies
-   pip install -r requirements.txt
+   pip3 install -r requirements.txt
       
    # Start the backend server
-   python app.py
+   python3 app.py
    ```
 
 4. **Frontend Setup**

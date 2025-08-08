@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { API_BASE_URL } from "../api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -84,6 +85,13 @@ const ProviderPortal = () => {
     subscription_id: ""
   });
   
+  // New state for pending requests
+  const [pendingRequests, setPendingRequests] = useState<any[]>([]);
+  const [isLoadingPendingRequests, setIsLoadingPendingRequests] = useState(false);
+  const [selectedPendingRequest, setSelectedPendingRequest] = useState<any>(null);
+  const [providerNotes, setProviderNotes] = useState("");
+  const [isApprovingRequest, setIsApprovingRequest] = useState(false);
+  
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -94,6 +102,7 @@ const ProviderPortal = () => {
   useEffect(() => {
     if (providerProfile?.profile.provider_id) {
       fetchClaimsHistory();
+      fetchPendingRequests();
     }
   }, [providerProfile]);
 
@@ -109,8 +118,9 @@ const ProviderPortal = () => {
         return;
       }
 
+
       // Fetch provider profile from backend
-      const response = await fetch("http://127.0.0.1:5000/provider/profile", {
+  const response = await fetch(`${API_BASE_URL}/provider/profile`, {
         headers: {
           "Authorization": `Bearer ${token}`,
           "Content-Type": "application/json",
@@ -167,7 +177,7 @@ const ProviderPortal = () => {
     setIsLoadingClaims(true);
     try {
       const token = localStorage.getItem("authToken");
-      const response = await fetch(`http://127.0.0.1:5000/claims/provider/${providerProfile.profile.provider_id}`, {
+  const response = await fetch(`${API_BASE_URL}/claims/provider/${providerProfile.profile.provider_id}`, {
         headers: {
           "Authorization": `Bearer ${token}`,
           "Content-Type": "application/json",
@@ -206,7 +216,7 @@ const ProviderPortal = () => {
     try {
       setIsSearchingMembers(true);
       const token = localStorage.getItem("authToken");
-      const response = await fetch(`http://127.0.0.1:5000/member/search?q=${encodeURIComponent(query)}`, {
+  const response = await fetch(`${API_BASE_URL}/member/search?q=${encodeURIComponent(query)}`, {
         headers: {
           "Authorization": `Bearer ${token}`,
           "Content-Type": "application/json",
@@ -227,7 +237,7 @@ const ProviderPortal = () => {
   const fetchMemberInsurancePlans = async (memberId: string) => {
     try {
       const token = localStorage.getItem("authToken");
-      const response = await fetch(`http://127.0.0.1:5000/member/${memberId}/insurance-plans`, {
+  const response = await fetch(`${API_BASE_URL}/member/${memberId}/insurance-plans`, {
         headers: {
           "Authorization": `Bearer ${token}`,
           "Content-Type": "application/json",
@@ -264,7 +274,7 @@ const ProviderPortal = () => {
 
     try {
       const token = localStorage.getItem("authToken");
-      const response = await fetch("http://127.0.0.1:5000/claims", {
+  const response = await fetch(`${API_BASE_URL}/claims`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${token}`,
@@ -317,6 +327,99 @@ const ProviderPortal = () => {
       });
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // New functions for pending requests
+  const fetchPendingRequests = async () => {
+    try {
+      setIsLoadingPendingRequests(true);
+      const token = localStorage.getItem("authToken");
+  const response = await fetch(`${API_BASE_URL}/provider/pending-requests`, {
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setPendingRequests(data.data || []);
+      } else {
+        console.error('Failed to fetch pending requests');
+        toast({
+          title: "Error",
+          description: "Failed to load pending requests.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching pending requests:', error);
+      toast({
+        title: "Connection Error",
+        description: "Unable to fetch pending requests.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingPendingRequests(false);
+    }
+  };
+
+  const handleApprovePendingRequest = async (requestId: string) => {
+    if (!providerNotes.trim()) {
+      toast({
+        title: "Missing Information",
+        description: "Please add provider notes before approving.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsApprovingRequest(true);
+    try {
+      const token = localStorage.getItem("authToken");
+  const response = await fetch(`${API_BASE_URL}/provider/approve-pending-request`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          request_id: requestId,
+          provider_notes: providerNotes
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        toast({
+          title: "Request Approved",
+          description: `Request approved and submitted to insurance. Auth ID: ${data.auth_id}`,
+        });
+        
+        // Reset form
+        setProviderNotes("");
+        setSelectedPendingRequest(null);
+        
+        // Refresh pending requests
+        fetchPendingRequests();
+      } else {
+        toast({
+          title: "Approval Error",
+          description: data.message || "Unable to approve request.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Error approving request:', error);
+      toast({
+        title: "Connection Error",
+        description: "Unable to connect to the server.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsApprovingRequest(false);
     }
   };
 
@@ -429,6 +532,22 @@ const ProviderPortal = () => {
         >
           <History className="w-4 h-4" />
           <span>Claims History</span>
+        </button>
+        <button
+          onClick={() => setActiveTab("pending-requests")}
+          className={`flex-1 flex items-center justify-center space-x-2 px-4 py-3 rounded-lg font-medium transition-all duration-200 ${
+            activeTab === "pending-requests"
+              ? "bg-white text-blue-600 shadow-sm"
+              : "text-gray-600 hover:text-gray-900"
+          }`}
+        >
+          <Clock className="w-4 h-4" />
+          <span>Pending Requests</span>
+          {pendingRequests.length > 0 && (
+            <Badge variant="secondary" className="ml-1 bg-red-100 text-red-800 text-xs">
+              {pendingRequests.length}
+            </Badge>
+          )}
         </button>
       </div>
 
@@ -709,6 +828,135 @@ const ProviderPortal = () => {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Pending Requests Tab */}
+      {activeTab === "pending-requests" && (
+        <Card className="bg-white shadow-lg border-0 rounded-2xl">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-full flex items-center justify-center">
+                  <Clock className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <CardTitle>Pending Requests</CardTitle>
+                  <CardDescription>
+                    Review and approve member requests before they are submitted to insurance
+                  </CardDescription>
+                </div>
+              </div>
+              <Button
+                onClick={fetchPendingRequests}
+                disabled={isLoadingPendingRequests}
+                variant="outline"
+                size="sm"
+              >
+                {isLoadingPendingRequests ? (
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                ) : (
+                  "Refresh"
+                )}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {isLoadingPendingRequests ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                <span className="ml-2 text-gray-600">Loading pending requests...</span>
+              </div>
+            ) : pendingRequests.length === 0 ? (
+              <div className="text-center py-8">
+                <Clock className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No Pending Requests</h3>
+                <p className="text-gray-600">All member requests have been processed.</p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {pendingRequests.map((request) => (
+                  <Card key={request.request_id} className="border-l-4 border-yellow-500">
+                    <CardContent className="p-6">
+                      <div className="flex justify-between items-start mb-4">
+                        <div>
+                          <h4 className="text-lg font-semibold text-gray-900">{request.procedure}</h4>
+                          <p className="text-sm text-gray-600">{request.diagnosis}</p>
+                          <div className="mt-2 space-y-1">
+                            <p className="text-sm text-gray-500">
+                              <strong>Member:</strong> {request.member_name} ({request.member_id})
+                            </p>
+                            <p className="text-sm text-gray-500">
+                              <strong>Urgency:</strong> {request.urgency}
+                            </p>
+                            <p className="text-sm text-gray-500">
+                              <strong>Submitted:</strong> {new Date(request.submitted_at).toLocaleDateString()}
+                            </p>
+                          </div>
+                          {request.additional_notes && (
+                            <div className="mt-3">
+                              <p className="text-sm text-gray-600">
+                                <strong>Additional Notes:</strong> {request.additional_notes}
+                              </p>
+                            </div>
+                          )}
+                          {request.member_notes && (
+                            <div className="mt-2">
+                              <p className="text-sm text-blue-600">
+                                <strong>Member Notes:</strong> {request.member_notes}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                        <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">
+                          Pending Review
+                        </Badge>
+                      </div>
+                      
+                      <div className="space-y-4">
+                        <div>
+                          <Label htmlFor={`provider_notes_${request.request_id}`} className="text-sm font-medium text-gray-700">
+                            Provider Notes *
+                          </Label>
+                          <Textarea
+                            id={`provider_notes_${request.request_id}`}
+                            placeholder="Add your clinical notes and recommendations..."
+                            value={selectedPendingRequest?.request_id === request.request_id ? providerNotes : ""}
+                            onChange={(e) => {
+                              setSelectedPendingRequest(request);
+                              setProviderNotes(e.target.value);
+                            }}
+                            rows={3}
+                            className="mt-1 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+                          />
+                        </div>
+                        
+                        <div className="flex space-x-3">
+                          <Button
+                            onClick={() => handleApprovePendingRequest(request.request_id)}
+                            disabled={isApprovingRequest || !providerNotes.trim() || selectedPendingRequest?.request_id !== request.request_id}
+                            className="bg-gradient-to-r from-green-500 to-blue-600 hover:from-green-600 hover:to-blue-700 text-white"
+                          >
+                            {isApprovingRequest && selectedPendingRequest?.request_id === request.request_id ? (
+                              <>
+                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                Approving...
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle className="w-4 h-4 mr-2" />
+                                Approve & Submit to Insurance
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
               </div>
             )}
           </CardContent>

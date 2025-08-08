@@ -28,10 +28,16 @@ from dotenv import load_dotenv
 import random
 from faker import Faker
 import bcrypt
-from bson import ObjectId
+from bson.objectid import ObjectId
+import openai
+import json
+import re
 
 # Load environment variables
 load_dotenv()
+
+# Initialize OpenAI
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # Initialize Flask app and extensions
 app = Flask(__name__)
@@ -52,6 +58,7 @@ claims = db.claims
 prior_auths = db.prior_auths
 payers = db.payers
 insurance_subscriptions = db.insurance_subscriptions  # New collection for insurance subscriptions
+pending_requests = db.pending_requests  # New collection for pending member requests
 
 
 # =====================================================
@@ -1284,6 +1291,582 @@ def auto_review_auth(auth_request):
             }
         }
     )
+
+def generate_prompt_for_llm(auth_request, member_data, past_requests):
+    """
+    Generate a prompt for LLM-based AI review.
+    
+    Args:
+        auth_request: The authorization request
+        member_data: Member profile data
+        past_requests: Historical requests for the member
+        
+    Returns:
+        Formatted prompt string
+    """
+    prompt = f"""
+You are a medical insurance AI agent reviewing a prior authorization request.
+
+Request Details:
+- Procedure: {auth_request['procedure']}
+- Diagnosis: {auth_request['diagnosis']}
+- Urgency: {auth_request['urgency']}
+- Additional Notes: {auth_request['additional_notes']}
+
+Member Profile:
+- ID: {member_data.get('member_id')}
+- Age: {member_data.get('age')}
+- Gender: {member_data.get('gender')}
+- Chronic Conditions: {member_data.get('conditions', [])}
+
+Historical Requests:
+{past_requests if past_requests else "No past requests found"}
+
+Task:
+Evaluate the request and respond with:
+- `status`: "approved", "pending", or "rejected"
+- `reason`: A short reason explaining the decision
+- `ai_notes`: Any extra AI observations
+"""
+    return prompt
+
+def auto_review_auth_with_llm(auth_request, member_data, past_requests):
+    """
+    Review authorization request using OpenAI LLM.
+    
+    Args:
+        auth_request: The authorization request
+        member_data: Member profile data
+        past_requests: Historical requests
+        
+    Returns:
+        AI decision dictionary
+    """
+    try:
+        prompt = generate_prompt_for_llm(auth_request, member_data, past_requests)
+        
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are an AI prior authorization reviewer."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.4
+        )
+        
+        result = response.choices[0].message.content
+        
+        # Parse the result (expecting JSON-like structure)
+        try:
+            # Try to extract JSON from the response
+            json_match = re.search(r'\{.*\}', result, re.DOTALL)
+            if json_match:
+                decision = json.loads(json_match.group())
+            else:
+                # Fallback parsing
+                decision = {
+                    'status': 'pending',
+                    'reason': 'AI review completed but decision unclear',
+                    'ai_notes': result
+                }
+        except json.JSONDecodeError:
+            decision = {
+                'status': 'pending',
+                'reason': 'AI review completed but decision unclear',
+                'ai_notes': result
+            }
+        
+        # Update the authorization request with AI decision
+        db.prior_auths.update_one(
+            {'auth_id': auth_request['auth_id']},
+            {
+                '$set': {
+                    'ai_processed': True,
+                    'ai_decision_text': result,
+                    'ai_decision': decision.get('status', 'pending'),
+                    'ai_notes': decision.get('ai_notes', ''),
+                    'ai_reason': decision.get('reason', ''),
+                    'ai_reviewed_at': datetime.datetime.utcnow()
+                }
+            }
+        )
+        
+        return decision
+        
+    except Exception as e:
+        print(f"Error in AI review: {str(e)}")
+        # Fallback to simple AI logic
+        return auto_review_auth(auth_request)
+
+def format_request_description(raw_input):
+    """
+    Format medical request description using AI.
+    
+    Args:
+        raw_input: Raw user input
+        
+    Returns:
+        Formatted description
+    """
+    try:
+        prompt = f"""
+Format the following medical request description into a professional and clear format suitable for prior authorization review. Keep it brief but medically sound:
+
+"{raw_input}"
+"""
+        
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are a medical writing assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3
+        )
+        
+        return response.choices[0].message.content.strip()
+        
+    except Exception as e:
+        print(f"Error formatting description: {str(e)}")
+        return raw_input
+
+def get_autocomplete_suggestion(input_text):
+    """
+    Get autocomplete suggestions using AI.
+    
+    Args:
+        input_text: Partial user input
+        
+    Returns:
+        Suggestion string
+    """
+    try:
+        prompt = f"""
+The user is filling a prior authorization form. Suggest an autocomplete continuation for: "{input_text}"
+
+Provide a brief, relevant suggestion that would help complete the medical form field.
+"""
+        
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are a medical form assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.5,
+            max_tokens=50
+        )
+        
+        return response.choices[0].message.content.strip()
+        
+    except Exception as e:
+        print(f"Error getting autocomplete: {str(e)}")
+        return ""
+
+def get_ai_health_buddy_response(user_message, member_data, past_requests):
+    """
+    Get AI health buddy response for member queries.
+    
+    Args:
+        user_message: User's health question
+        member_data: Member profile data
+        past_requests: Past medical requests
+        
+    Returns:
+        AI response string
+    """
+    try:
+        prompt = f"""
+You are a helpful AI health buddy for a member. Based on their profile and history, provide helpful advice.
+
+Member Profile:
+- Age: {member_data.get('age', 'Unknown')}
+- Gender: {member_data.get('gender', 'Unknown')}
+- Conditions: {member_data.get('conditions', [])}
+- Past Requests: {past_requests if past_requests else 'None'}
+
+User Question: {user_message}
+
+Provide helpful, medical advice while being careful not to give specific medical diagnoses. Suggest appropriate next steps and providers if relevant.
+"""
+        
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are a helpful AI health assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7
+        )
+        
+        return response.choices[0].message.content.strip()
+        
+    except Exception as e:
+        print(f"Error getting health buddy response: {str(e)}")
+        return "I'm sorry, I'm having trouble processing your request right now. Please try again later."
+
+# =====================================================
+# AI-Powered Endpoints
+# =====================================================
+
+@app.route('/ai/auto-review', methods=['POST'])
+@token_required
+def auto_review_prior_auth(current_user):
+    """
+    Auto-review a prior authorization request using AI.
+    """
+    try:
+        data = request.get_json()
+        auth_id = data.get('auth_id')
+        
+        if not auth_id:
+            return jsonify({'message': 'Auth ID is required'}), 400
+            
+        # Find the authorization request
+        auth_request = db.prior_auths.find_one({'auth_id': auth_id})
+        if not auth_request:
+            return jsonify({'message': 'Authorization request not found'}), 404
+            
+        # Get member data
+        member = db.members.find_one({'member_id': auth_request['member_id']})
+        if not member:
+            return jsonify({'message': 'Member not found'}), 404
+            
+        # Get past requests for this member
+        past_requests = list(db.prior_auths.find({'member_id': auth_request['member_id']}))
+        
+        # Perform AI review
+        decision = auto_review_auth_with_llm(auth_request, member, past_requests)
+        
+        return jsonify({
+            'message': 'Auto-review completed successfully',
+            'decision': decision,
+            'auth_id': auth_id
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'message': f'Error in auto-review: {str(e)}'}), 500
+
+@app.route('/ai/format-description', methods=['POST'])
+@token_required
+def format_description(current_user):
+    """
+    Format medical request description using AI.
+    """
+    try:
+        data = request.get_json()
+        raw_input = data.get('raw_input')
+        
+        if not raw_input:
+            return jsonify({'message': 'Raw input is required'}), 400
+            
+        formatted = format_request_description(raw_input)
+        
+        return jsonify({
+            'formatted': formatted
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'message': f'Error formatting description: {str(e)}'}), 500
+
+@app.route('/ai/autocomplete', methods=['GET'])
+@token_required
+def get_autocomplete(current_user):
+    """
+    Get autocomplete suggestions using AI.
+    """
+    try:
+        input_text = request.args.get('input', '')
+        
+        if not input_text:
+            return jsonify({'suggestion': ''}), 200
+            
+        suggestion = get_autocomplete_suggestion(input_text)
+        
+        return jsonify({
+            'suggestion': suggestion
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'message': f'Error getting autocomplete: {str(e)}'}), 500
+
+@app.route('/ai/health-buddy', methods=['POST'])
+@token_required
+def health_buddy_chat(current_user):
+    """
+    AI health buddy chat for members.
+    """
+    try:
+        data = request.get_json()
+        user_message = data.get('message')
+        
+        if not user_message:
+            return jsonify({'message': 'User message is required'}), 400
+            
+        # Get member data
+        member = db.members.find_one({'email': current_user['email']})
+        if not member:
+            return jsonify({'message': 'Member not found'}), 404
+            
+        # Get past requests
+        past_requests = list(db.prior_auths.find({'member_id': member['member_id']}))
+        
+        # Get AI response
+        ai_response = get_ai_health_buddy_response(user_message, member, past_requests)
+        
+        return jsonify({
+            'response': ai_response
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'message': f'Error in health buddy: {str(e)}'}), 500
+
+# =====================================================
+# Member-Provider Interaction Endpoints
+# =====================================================
+
+@app.route('/member/submit-pending-request', methods=['POST'])
+@token_required
+def submit_pending_request(current_user):
+    """
+    Submit a pending request from member that needs provider approval.
+    """
+    try:
+        data = request.get_json()
+        
+        # Validate required fields
+        required_fields = ['procedure', 'diagnosis', 'provider_info', 'urgency']
+        if not all(field in data for field in required_fields):
+            return jsonify({'message': 'Missing required fields'}), 400
+            
+        # Get member data
+        member = db.members.find_one({'email': current_user['email']})
+        if not member:
+            return jsonify({'message': 'Member not found'}), 404
+            
+        # Handle provider info (could be ID, name, or email)
+        provider_info = data['provider_info']
+        provider = None
+        
+        # Try to find provider by different methods
+        if provider_info.startswith('P'):
+            # Assume it's a provider ID
+            provider = db.providers.find_one({'provider_id': provider_info})
+        else:
+            # Try to find by name or email
+            provider = db.providers.find_one({
+                '$or': [
+                    {'name': {'$regex': provider_info, '$options': 'i'}},
+                    {'email': {'$regex': provider_info, '$options': 'i'}}
+                ]
+            })
+            
+        if not provider:
+            return jsonify({'message': 'Provider not found in database'}), 404
+            
+        # Create pending request
+        pending_request = {
+            'request_id': f"PEND{random.randint(1000, 9999)}",
+            'member_id': member['member_id'],
+            'member_name': member['name'],
+            'member_email': member['email'],
+            'provider_id': provider['provider_id'],
+            'provider_name': provider['name'],
+            'provider_email': provider['email'],
+            'procedure': data['procedure'],
+            'diagnosis': data['diagnosis'],
+            'urgency': data['urgency'],
+            'additional_notes': data.get('additional_notes', ''),
+            'status': 'pending_provider_approval',
+            'submitted_at': datetime.datetime.utcnow(),
+            'member_notes': data.get('member_notes', '')
+        }
+        
+        # Insert into pending requests collection
+        db.pending_requests.insert_one(pending_request)
+        
+        return jsonify({
+            'message': 'Pending request submitted successfully',
+            'request_id': pending_request['request_id'],
+            'provider_name': provider['name']
+        }), 201
+        
+    except Exception as e:
+        return jsonify({'message': f'Error submitting pending request: {str(e)}'}), 500
+
+@app.route('/provider/pending-requests', methods=['GET'])
+@token_required
+def get_provider_pending_requests(current_user):
+    """
+    Get pending requests for a specific provider.
+    """
+    try:
+        # Get provider data
+        provider = db.providers.find_one({'email': current_user['email']})
+        if not provider:
+            return jsonify({'message': 'Provider not found'}), 404
+            
+        # Get pending requests for this provider
+        pending_requests = list(db.pending_requests.find({
+            'provider_id': provider['provider_id'],
+            'status': 'pending_provider_approval'
+        }))
+        
+        # Convert ObjectId to string
+        for request in pending_requests:
+            request['_id'] = str(request['_id'])
+            
+        return jsonify({
+            'data': pending_requests
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'message': f'Error fetching pending requests: {str(e)}'}), 500
+
+@app.route('/provider/approve-pending-request', methods=['POST'])
+@token_required
+def approve_pending_request(current_user):
+    """
+    Provider approves a pending request and submits it to insurance.
+    """
+    try:
+        data = request.get_json()
+        request_id = data.get('request_id')
+        provider_notes = data.get('provider_notes', '')
+        
+        if not request_id:
+            return jsonify({'message': 'Request ID is required'}), 400
+            
+        # Get provider data
+        provider = db.providers.find_one({'email': current_user['email']})
+        if not provider:
+            return jsonify({'message': 'Provider not found'}), 404
+            
+        # Find the pending request
+        pending_request = db.pending_requests.find_one({
+            'request_id': request_id,
+            'provider_id': provider['provider_id']
+        })
+        
+        if not pending_request:
+            return jsonify({'message': 'Pending request not found'}), 404
+            
+        # Create the final authorization request
+        auth_request = {
+            'auth_id': f"AUTH{random.randint(1000, 9999)}",
+            'member_id': pending_request['member_id'],
+            'procedure': pending_request['procedure'],
+            'diagnosis': pending_request['diagnosis'],
+            'provider': pending_request['provider_name'],
+            'provider_id': pending_request['provider_id'],
+            'urgency': pending_request['urgency'],
+            'additional_notes': pending_request['additional_notes'],
+            'provider_notes': provider_notes,
+            'member_notes': pending_request['member_notes'],
+            'status': 'pending',
+            'submitted_at': datetime.datetime.utcnow(),
+            'ai_processed': False,
+            'source': 'provider_approved'
+        }
+        
+        # Insert into prior_auths collection
+        db.prior_auths.insert_one(auth_request)
+        
+        # Update pending request status
+        db.pending_requests.update_one(
+            {'request_id': request_id},
+            {
+                '$set': {
+                    'status': 'approved_by_provider',
+                    'approved_at': datetime.datetime.utcnow(),
+                    'provider_notes': provider_notes,
+                    'final_auth_id': auth_request['auth_id']
+                }
+            }
+        )
+        
+        return jsonify({
+            'message': 'Request approved and submitted to insurance',
+            'auth_id': auth_request['auth_id']
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'message': f'Error approving request: {str(e)}'}), 500
+
+@app.route('/member/pending-requests', methods=['GET'])
+@token_required
+def get_member_pending_requests(current_user):
+    """
+    Get pending requests for a member.
+    """
+    try:
+        # Get member data
+        member = db.members.find_one({'email': current_user['email']})
+        if not member:
+            return jsonify({'message': 'Member not found'}), 404
+            
+        # Get pending requests for this member
+        pending_requests = list(db.pending_requests.find({
+            'member_id': member['member_id']
+        }))
+        
+        # Convert ObjectId to string
+        for request in pending_requests:
+            request['_id'] = str(request['_id'])
+            
+        return jsonify({
+            'data': pending_requests
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'message': f'Error fetching pending requests: {str(e)}'}), 500
+
+@app.route('/provider/search', methods=['GET'])
+@token_required
+def search_providers(current_user):
+    """
+    Search providers by name or email.
+    """
+    try:
+        query = request.args.get('q', '')
+        
+        if not query:
+            return jsonify({'data': []}), 200
+            
+        # Search providers by name or email
+        providers_list = list(db.providers.find({
+            '$or': [
+                {'name': {'$regex': query, '$options': 'i'}},
+                {'email': {'$regex': query, '$options': 'i'}},
+                {'provider_id': {'$regex': query, '$options': 'i'}}
+            ]
+        }).limit(10))
+        
+        # Convert ObjectId to string and format response
+        for provider in providers_list:
+            provider['_id'] = str(provider['_id'])
+            
+        return jsonify({
+            'data': providers_list
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'message': f'Error searching providers: {str(e)}'}), 500
+
+# =====================================================
+# Health Check Endpoint
+# =====================================================
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """
+    Health check endpoint for the application.
+    """
+    return jsonify({
+        'status': 'healthy',
+        'message': 'Prior Authorization System is running',
+        'timestamp': datetime.datetime.utcnow().isoformat()
+    }), 200
 
 # =====================================================
 # Claims Management Endpoints

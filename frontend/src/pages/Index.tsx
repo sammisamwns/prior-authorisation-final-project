@@ -68,9 +68,13 @@ const Index = () => {
                   <p className="text-sm text-gray-600">AI-Powered Authorization System</p>
                 </div>
               </div>
-              <Badge className="bg-gradient-to-r from-green-500 to-blue-500 text-white">
-                Secure Portal
-              </Badge>
+              <Button
+                onClick={() => setActiveTab("login")}
+                className="bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 text-white font-medium px-4 py-2 rounded-lg transition-all duration-300 shadow-md hover:shadow-lg"
+              >
+                <User className="w-4 h-4 mr-2" />
+                Login
+              </Button>
             </div>
           </div>
         </header>
@@ -87,8 +91,39 @@ const Index = () => {
               </p>
             </div>
 
-            {/* Features */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {/* Navigation Tabs */}
+            <div className="flex justify-center">
+              <div className="flex space-x-1 bg-gray-100 p-1 rounded-xl">
+                <button
+                  onClick={() => setActiveTab("overview")}
+                  className={`flex items-center justify-center space-x-2 px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
+                    activeTab === "overview"
+                      ? "bg-white text-blue-600 shadow-sm"
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  <Activity className="w-4 h-4" />
+                  <span>Overview</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab("login")}
+                  className={`flex items-center justify-center space-x-2 px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
+                    activeTab === "login"
+                      ? "bg-white text-blue-600 shadow-sm"
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  <User className="w-4 h-4" />
+                  <span>Sign In</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Overview Tab Content */}
+            {activeTab === "overview" && (
+              <>
+                {/* Features */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
               <Card className="bg-white shadow-lg border-0 rounded-2xl overflow-hidden hover:shadow-xl transition-shadow">
                 <CardHeader className="text-center pb-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white">
                   <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center mx-auto">
@@ -160,11 +195,23 @@ const Index = () => {
               </div>
               <PriorAuthFlowDiagram />
             </div>
+              </>
+            )}
 
             {/* Authentication */}
-            <div className="flex justify-center">
-              <AuthenticationCard onAuthenticated={handleAuthenticated} />
-            </div>
+            {activeTab === "login" && (
+              <div className="space-y-8">
+                <div className="text-center">
+                  <h2 className="text-3xl font-bold text-gray-900 mb-4">Sign In to Your Portal</h2>
+                  <p className="text-gray-600 max-w-2xl mx-auto">
+                    Access your personalized healthcare prior authorization portal
+                  </p>
+                </div>
+                <div className="flex justify-center">
+                  <AuthenticationCard onAuthenticated={handleAuthenticated} />
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -206,13 +253,6 @@ const Index = () => {
       {/* Main Content */}
       <div className="container mx-auto px-4 py-8">
         <Tabs value={activeTab} onValueChange={() => {}} className="w-full">
-          <TabsList className="grid w-full grid-cols-4 max-w-2xl mx-auto mb-8 bg-white shadow-lg rounded-xl p-1">
-            <TabsTrigger value="overview" className="rounded-lg" disabled={true}>Overview</TabsTrigger>
-            <TabsTrigger value="member" className="rounded-lg" disabled={userRole !== "member"}>Member Portal</TabsTrigger>
-            <TabsTrigger value="provider" className="rounded-lg" disabled={userRole !== "provider"}>Provider Portal</TabsTrigger>
-            <TabsTrigger value="payer" className="rounded-lg" disabled={userRole !== "payer"}>Payer Portal</TabsTrigger>
-          </TabsList>
-
           <TabsContent value="overview" className="space-y-8">
             <div className="text-center mb-8">
               <h2 className="text-3xl font-bold text-gray-900 mb-4">System Overview</h2>
