@@ -6,9 +6,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import AuthenticationCard from "@/components/AuthenticationCard";
 import MemberPortal from "@/components/MemberPortal";
 import ProviderPortal from "@/components/ProviderPortal";
+import PayerPortal from "@/components/PayerPortal";
 import PriorAuthFlowDiagram from "@/components/PriorAuthFlowDiagram";
 import { useToast } from "@/hooks/use-toast";
-import { Shield, Stethoscope, Brain, LogOut, Activity, User, Heart } from "lucide-react";
+import { Shield, Stethoscope, Brain, LogOut, Activity, User, Heart, Building2 } from "lucide-react";
 
 const Index = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -149,6 +150,17 @@ const Index = () => {
               </Card>
             </div>
 
+            {/* Process Flow Diagram */}
+            <div className="space-y-8">
+              <div className="text-center">
+                <h2 className="text-3xl font-bold text-gray-900 mb-4">How It Works</h2>
+                <p className="text-gray-600 max-w-2xl mx-auto">
+                  Understand our AI-powered prior authorization process flow
+                </p>
+              </div>
+              <PriorAuthFlowDiagram />
+            </div>
+
             {/* Authentication */}
             <div className="flex justify-center">
               <AuthenticationCard onAuthenticated={handleAuthenticated} />
@@ -193,11 +205,12 @@ const Index = () => {
 
       {/* Main Content */}
       <div className="container mx-auto px-4 py-8">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-3 max-w-md mx-auto mb-8 bg-white shadow-lg rounded-xl p-1">
-            <TabsTrigger value="overview" className="rounded-lg">Overview</TabsTrigger>
-            <TabsTrigger value="member" className="rounded-lg">Member Portal</TabsTrigger>
-            <TabsTrigger value="provider" className="rounded-lg">Provider Portal</TabsTrigger>
+        <Tabs value={activeTab} onValueChange={() => {}} className="w-full">
+          <TabsList className="grid w-full grid-cols-4 max-w-2xl mx-auto mb-8 bg-white shadow-lg rounded-xl p-1">
+            <TabsTrigger value="overview" className="rounded-lg" disabled={true}>Overview</TabsTrigger>
+            <TabsTrigger value="member" className="rounded-lg" disabled={userRole !== "member"}>Member Portal</TabsTrigger>
+            <TabsTrigger value="provider" className="rounded-lg" disabled={userRole !== "provider"}>Provider Portal</TabsTrigger>
+            <TabsTrigger value="payer" className="rounded-lg" disabled={userRole !== "payer"}>Payer Portal</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-8">
@@ -208,7 +221,16 @@ const Index = () => {
                 You can access the {userRole} portal to manage authorization requests and view the AI-powered processing workflow.
               </p>
             </div>
-            <PriorAuthFlowDiagram />
+            {/* Removed PriorAuthFlowDiagram from authenticated view */}
+            <div className="text-center py-12">
+              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Activity className="w-8 h-8 text-blue-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Welcome to Your Dashboard</h3>
+              <p className="text-gray-600">
+                You are now logged in and can access your personalized portal features.
+              </p>
+            </div>
           </TabsContent>
 
           <TabsContent value="member">
@@ -238,6 +260,22 @@ const Index = () => {
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">Provider Portal Access</h3>
                 <p className="text-gray-600">
                   This portal is only available for providers. You are currently logged in as a {userRole}.
+                </p>
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="payer">
+            {userRole === "payer" ? (
+              <PayerPortal />
+            ) : (
+              <div className="text-center py-12">
+                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Building2 className="w-8 h-8 text-gray-400" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">Payer Portal Access</h3>
+                <p className="text-gray-600">
+                  This portal is only available for payers. You are currently logged in as a {userRole}.
                 </p>
               </div>
             )}

@@ -47,7 +47,7 @@ A modern, full-stack healthcare portal for managing prior authorizations with a 
 
 1. **Clone the repository**
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/sammisamwns/prior-authorisation-final-project.git
    cd prior-authorisation-final-project
    ```
 
@@ -59,81 +59,75 @@ A modern, full-stack healthcare portal for managing prior authorizations with a 
 
 3. **Backend Setup**
    ```bash
-   cd healthcare-portal-backend
+   cd backend
    
    # Create virtual environment
    python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   source venv/bin/activate || ./venv/Scripts/activate 
    
    # Install dependencies
    pip install -r requirements.txt
-   
-   # Initialize database with sample data
-   python init_db.py
-   
+      
    # Start the backend server
    python app.py
    ```
 
 4. **Frontend Setup**
    ```bash
-   cd healthcare-portal-frontend
+   cd frontend
    
    # Install dependencies
    npm install
    
    # Start the development server
-   npm start
+   npm run dev
    ```
 
 5. **Access the Application**
-   - Frontend: http://localhost:3000
+   - Frontend: http://localhost:8080/
    - Backend API: http://localhost:5000
 
 ## 📊 Sample Data
 
 The database initialization script creates sample users with the following credentials:
 
-### Provider Accounts
-- **Email**: sarah.johnson@healthcare.com | **Password**: password123
-- **Email**: michael.chen@healthcare.com | **Password**: password123
-
-### Patient Accounts
-- **Email**: emily.rodriguez@patient.com | **Password**: password123
-- **Email**: james.wilson@patient.com | **Password**: password123
-- **Email**: lisa.thompson@patient.com | **Password**: password123
-
 ## 🏗️ Project Structure
 
 ```
 prior-authorisation-final-project/
-├── healthcare-portal-backend/
-│   ├── app.py                 # Main Flask application
-│   ├── init_db.py            # Database initialization script
-│   ├── requirements.txt      # Python dependencies
-│   ├── .env                  # Environment variables
-│   └── venv/                 # Virtual environment
-├── healthcare-portal-frontend/
+├── backend/
+│   ├── app.py
+│   ├── jwt_utils.py
+│   ├── requirements.txt
+│   ├── env.example
+│   ├── sample_credentials.txt
+│   ├── README.md
+│   └── venv/
+├── frontend/
 │   ├── src/
-│   │   ├── components/       # Reusable UI components
-│   │   │   ├── Header.js
-│   │   │   └── Sidebar.js
-│   │   ├── pages/           # Page components
-│   │   │   ├── Authorizations.js
-│   │   │   ├── Drugs.js
-│   │   │   ├── Profile.js
-│   │   │   └── Reports.js
-│   │   ├── App.js           # Main application component
-│   │   ├── Login.js         # Login page
-│   │   ├── Signup.js        # Signup page
-│   │   ├── Dashboard.js     # Dashboard page
-│   │   ├── PrivateRoute.js  # Route protection
-│   │   ├── index.js         # Application entry point
-│   │   └── index.css        # Global styles
+│   │   ├── components/
+│   │   │   ├── AuthenticationCard.tsx
+│   │   │   ├── MemberPortal.tsx
+│   │   │   ├── ProviderPortal.tsx
+│   │   │   ├── PayerPortal.tsx       # ✅ New: Payer dashboard UI
+│   │   │   ├── PriorAuthFlowDiagram.tsx
+│   │   │   └── ui/
+│   │   ├── pages/
+│   │   │   ├── Index.tsx
+│   │   │   └── NotFound.tsx
+│   │   ├── hooks/
+│   │   ├── lib/
+│   │   ├── App.tsx
+│   │   ├── main.tsx
+│   │   ├── index.css
+│   │   └── vite-env.d.ts
 │   ├── public/
-│   │   └── index.html       # HTML template
-│   └── package.json         # Node.js dependencies
-└── README.md               # Project documentation
+│   ├── package.json
+│   ├── vite.config.ts
+│   ├── tailwind.config.ts
+│   └── tsconfig.json
+└── README.md
+
 ```
 
 ## 🔧 API Endpoints
@@ -210,34 +204,19 @@ The application is fully responsive and optimized for:
 
 ### Backend Development
 ```bash
-cd healthcare-portal-backend
-source venv/bin/activate
+cd backend
+python3 -m venv venv
+source venv/bin/activate || ./venv/bin/activate
+pip3 install -r requirements.txt
 python app.py
 ```
 
 ### Frontend Development
 ```bash
-cd healthcare-portal-frontend
-npm start
+cd frontend
+npm i
+npm run dev
 ```
-
-### Database Management
-```bash
-# Initialize with sample data
-python init_db.py
-
-# Access MongoDB shell
-mongosh healthcareDB
-```
-
-## 📈 Analytics & Reporting
-
-The application includes comprehensive analytics:
-- **Real-time metrics** dashboard
-- **Status distribution** charts
-- **Drug class analysis**
-- **Monthly trend** visualization
-- **Export functionality** for reports
 
 ## 🔧 Configuration
 
@@ -245,11 +224,12 @@ The application includes comprehensive analytics:
 Create a `.env` file in the backend directory:
 ```env
 MONGO_URI=mongodb://localhost:27017/healthcareDB
-JWT_SECRET_KEY=your-super-secret-and-long-jwt-key-goes-here
+JWT_SECRET_KEY="jwt-key"
+FLASK_SECRET_KEY="flask-key"
 ```
 
 ### API Configuration
-The frontend is configured to connect to `http://localhost:5000` by default. Update the API base URL in production.
+The frontend is configured to connect to `http://localhost:8080/` by default. Update the API base URL in production.
 
 ## 🤝 Contributing
 
@@ -258,10 +238,6 @@ The frontend is configured to connect to `http://localhost:5000` by default. Upd
 3. Make your changes
 4. Add tests if applicable
 5. Submit a pull request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## 🆘 Support
 
@@ -282,4 +258,3 @@ For support and questions:
 
 ---
 
-**Built with ❤️ for the healthcare industry** 

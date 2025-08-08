@@ -32,7 +32,7 @@ const AuthenticationCard = ({ onAuthenticated }: AuthenticationCardProps) => {
     }
 
     setIsLoading(true);
-    
+
     try {
       const response = await fetch("http://127.0.0.1:5000/login", {
         method: "POST",
@@ -53,12 +53,12 @@ const AuthenticationCard = ({ onAuthenticated }: AuthenticationCardProps) => {
         localStorage.setItem("userEmail", email);
         localStorage.setItem("userName", data.user.name);
         localStorage.setItem("userType", userType);
-        
+
         toast({
           title: "Login Successful",
           description: `Welcome back, ${data.user.name}!`,
         });
-        
+
         onAuthenticated(data.token, userType);
       } else {
         toast({
@@ -89,7 +89,7 @@ const AuthenticationCard = ({ onAuthenticated }: AuthenticationCardProps) => {
     }
 
     setIsLoading(true);
-    
+
     try {
       const response = await fetch("http://127.0.0.1:5000/register", {
         method: "POST",
@@ -143,14 +143,14 @@ const AuthenticationCard = ({ onAuthenticated }: AuthenticationCardProps) => {
             {isLogin ? "Welcome Back" : "Create Account"}
           </CardTitle>
           <CardDescription className="text-gray-600 mt-2">
-            {isLogin 
-              ? "Sign in to access your healthcare portal" 
+            {isLogin
+              ? "Sign in to access your healthcare portal"
               : "Join our healthcare platform"
             }
           </CardDescription>
         </div>
       </CardHeader>
-      
+
       <CardContent className="space-y-6">
         {!isLogin && (
           <div className="space-y-2">
@@ -233,6 +233,13 @@ const AuthenticationCard = ({ onAuthenticated }: AuthenticationCardProps) => {
                   <span>Provider</span>
                 </div>
               </SelectItem>
+              <SelectItem value="payer">
+                <div className="flex items-center space-x-2">
+                  <Shield className="w-4 h-4 text-yellow-600" />
+                  <span>Payer</span>
+                </div>
+              </SelectItem>
+
             </SelectContent>
           </Select>
         </div>
@@ -262,8 +269,8 @@ const AuthenticationCard = ({ onAuthenticated }: AuthenticationCardProps) => {
             }}
             className="text-sm text-blue-600 hover:text-blue-700 font-medium transition-colors"
           >
-            {isLogin 
-              ? "Don't have an account? Sign up" 
+            {isLogin
+              ? "Don't have an account? Sign up"
               : "Already have an account? Sign in"
             }
           </button>
