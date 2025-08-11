@@ -423,6 +423,8 @@ const ProviderPortal = () => {
     }
   };
 
+  const formatStatus = (status: string) => status.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+
   if (isLoading) {
     return (
       <div className="w-full max-w-6xl mx-auto p-6">
@@ -811,7 +813,7 @@ const ProviderPortal = () => {
                                 : "bg-yellow-100 text-yellow-800"
                             }
                           >
-                            {claim.status}
+                            {formatStatus(claim.status)}
                           </Badge>
                         </td>
                         <td className="py-3 px-4 text-sm text-gray-600">

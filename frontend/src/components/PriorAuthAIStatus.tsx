@@ -17,6 +17,7 @@ interface PriorAuth {
   submitted_date: string;
   priority: 'low' | 'medium' | 'high';
   notes?: string;
+  submitted_by?: string; // Added submitted_by field
 }
 
 const PriorAuthAIStatus = () => {
@@ -111,12 +112,14 @@ const PriorAuthAIStatus = () => {
   };
 
   const getStatusBadge = (status: string) => {
+    const formattedStatus = status.replace(/_/g, " ");
     const variants = {
       approved: "bg-green-100 text-green-800",
-      denied: "bg-red-100 text-red-800", 
-      pending: "bg-yellow-100 text-yellow-800"
+      denied: "bg-red-100 text-red-800",
+      pending: "bg-yellow-100 text-yellow-800",
+      "Pending Provider Approval": "bg-yellow-100 text-yellow-800",
     };
-    return variants[status as keyof typeof variants] || "bg-gray-100 text-gray-800";
+    return variants[formattedStatus as keyof typeof variants] || "bg-gray-100 text-gray-800";
   };
 
   const getPriorityBadge = (priority: string) => {
@@ -127,6 +130,8 @@ const PriorAuthAIStatus = () => {
     };
     return variants[priority as keyof typeof variants] || "bg-gray-100 text-gray-800";
   };
+
+  const formatStatus = (status: string) => status.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 
   if (loading) {
     return (
@@ -195,8 +200,8 @@ const PriorAuthAIStatus = () => {
                       <div className="flex-1">
                         <div className="flex items-center space-x-2 mb-2">
                           <h3 className="font-semibold text-gray-900">Request #{auth.auth_id}</h3>
-                          <Badge className={getStatusBadge(auth.status)}>
-                            {auth.status}
+                          <Badge className={getStatusBadge(formatStatus(auth.status))}>
+                            {formatStatus(auth.status)}
                           </Badge>
                           <Badge className={getPriorityBadge(auth.priority)}>
                             {auth.priority}
@@ -218,6 +223,10 @@ const PriorAuthAIStatus = () => {
                           <div className="flex items-center space-x-2">
                             <Clock className="w-4 h-4" />
                             <span><strong>Submitted:</strong> {auth.submitted_date}</span>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <User className="w-4 h-4" />
+                            <span><strong>Submitted By:</strong> {auth.submitted_by || "Unknown"}</span>
                           </div>
                         </div>
                         {auth.ai_decision && (

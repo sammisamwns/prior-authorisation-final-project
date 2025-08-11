@@ -113,6 +113,44 @@ const PayerPortal = () => {
     return variants[priority as keyof typeof variants] || "bg-gray-100 text-gray-800";
   };
 
+  const handleAutoReview = async (authId: string) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/ai/auto-review`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ auth_id: authId }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        toast({
+          title: "AI Auto-Review Completed",
+          description: `AI Decision: ${data.decision.status}. Notes: ${data.decision.ai_notes}`,
+        });
+        fetchRequests(); // Refresh the requests list
+      } else {
+        const errorData = await response.json();
+        toast({
+          title: "Error",
+          description: errorData.message || "Failed to perform AI auto-review.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Error in AI auto-review:", error);
+      toast({
+        title: "Connection Error",
+        description: "Unable to connect to the server.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const formatStatus = (status: string) => status.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
       {/* Header */}
@@ -257,7 +295,7 @@ const PayerPortal = () => {
                       </div>
                       <div className="flex items-center space-x-2">
                         <Badge className={getStatusBadge(request.status)}>
-                          {request.status}
+                          {formatStatus(request.status)}
                         </Badge>
                         <Badge className={getPriorityBadge(request.priority)}>
                           {request.priority}
@@ -291,20 +329,33 @@ const PayerPortal = () => {
                             <p className="text-sm text-gray-600">Member: {request.memberName}</p>
                             <p className="text-sm text-gray-600">Provider: {request.providerName}</p>
                             <p className="text-sm text-gray-600">Service: {request.service}</p>
-                            <p className="text-sm text-gray-600">Submitted: {request.submittedDate}</p>
+                            <div className="text-sm text-gray-600">
+                              Submitted At: {request.submitted_at && request.submitted_at.$date ? new Date(request.submitted_at.$date).toLocaleString() : "Invalid Date"}
+                            </div>
+                            <p className="text-sm text-gray-600">
+                              Submitted: {request.submittedDate}
+                            </p>
+                            {request.ai_notes && (
+                              <p className="text-sm text-blue-600">AI Notes: {request.ai_notes}</p>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center space-x-2">
                           <Badge className={getStatusBadge(request.status)}>
-                            {request.status}
+                            {formatStatus(request.status)}
                           </Badge>
                           <Badge className={getPriorityBadge(request.priority)}>
                             {request.priority}
                           </Badge>
-                          <Button size="sm" variant="outline">
-                            Review
-                          </Button>
+                          {request.status === "pending" && (
+                            <Button size="sm" variant="outline" onClick={() => handleAutoReview(request.id)}>
+                              Trigger AI Review
+                            </Button>
+                          )}
                         </div>
+                      </div>
+                      <div className="text-sm text-gray-600">
+                        Status: {formatStatus(request.status)}
                       </div>
                     </div>
                   ))}

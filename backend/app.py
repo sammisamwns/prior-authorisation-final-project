@@ -21,7 +21,8 @@ from flask_cors import CORS
 from flask_bcrypt import Bcrypt
 from flask_pymongo import PyMongo
 import jwt
-import datetime
+from datetime import timezone, timedelta
+from datetime import datetime as dtt
 from functools import wraps
 import os
 from dotenv import load_dotenv
@@ -29,15 +30,26 @@ import random
 from faker import Faker
 import bcrypt
 from bson.objectid import ObjectId
-import openai
 import json
 import re
+from openai import AzureOpenAI
+
 
 # Load environment variables
 load_dotenv()
 
-# Initialize OpenAI
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# Azure OpenAI Configuration
+AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
+AZURE_OPENAI_ENDPOINT = "https://wns-openai-genai-poc-eus-04.openai.azure.com/"
+AZURE_OPENAI_DEPLOYMENT = "gpt-4o"
+
+
+# Initialize Azure OpenAI client
+client = AzureOpenAI(
+    api_key=AZURE_OPENAI_API_KEY,
+    api_version="2024-02-01",
+    azure_endpoint=AZURE_OPENAI_ENDPOINT
+)
 
 # Initialize Flask app and extensions
 app = Flask(__name__)
@@ -49,6 +61,7 @@ fake = Faker()
 app.config['SECRET_KEY'] = os.getenv("FLASK_SECRET_KEY", "default-secret")
 app.config['MONGO_URI'] = os.getenv("MONGO_URI", "mongodb://localhost:27017/prior_authdb")
 mongo = PyMongo(app)
+
 
 # MongoDB Database Collections
 db = mongo.db
@@ -102,6 +115,289 @@ def token_required(f):
 
     return decorated
 
+
+
+# =====================================================
+# AI Processing Functions
+# =====================================================
+
+
+def auto_review_auth(auth_request, member_data, past_requests):
+    """
+    Review authorization request using Azure OpenAI Agentic AI.
+    """
+
+    try:
+        context_prompt = f"""
+        You are an autonomous medical insurance review agent.
+        Follow these steps:
+        1. Assess procedure risk.
+        2. Check urgency.
+        3. Consider patient's profile and history.
+        4. Apply policy rules.
+        5. Decide: approved, pending, or rejected.
+        6. Provide reason and extra notes.
+        Respond ONLY in JSON with keys: status, reason, ai_notes.
+
+Request Details:
+Procedure: {auth_request['procedure']}
+Diagnosis: {auth_request['diagnosis']}
+Urgency: {auth_request['urgency']}
+Additional Notes: {auth_request['additional_notes']}
+
+Member Profile:
+ID: {member_data.get('member_id')}
+Age: {member_data.get('age')}
+Gender: {member_data.get('gender')}
+Chronic Conditions: {member_data.get('conditions', [])}
+
+Historical Requests:
+{past_requests if past_requests else "No past requests found"}
+        """
+
+        plan_instructions = """
+You are an autonomous medical insurance review agent.
+Follow these steps:
+1. Assess procedure risk.
+2. Check urgency.
+3. Consider patient's profile and history.
+4. Apply policy rules.
+5. Decide: approved, pending, or rejected.
+6. Provide reason and extra notes.
+Respond ONLY in JSON with keys: status, reason, ai_notes.
+        """
+
+        # Call Azure OpenAI Chat Completions API
+        response = client.chat.completions.create(
+            model=os.environ["AZURE_OPENAI_DEPLOYMENT"],
+            temperature=0.2,
+            max_tokens=500,
+            messages=[
+                {"role": "system", "content": plan_instructions},
+                {"role": "user", "content": context_prompt}
+            ]
+        )
+
+        result_text = response.choices[0].message["content"]
+
+        # Extract JSON
+        try:
+            json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
+            if json_match:
+                decision_data = json.loads(json_match.group())
+            else:
+                decision_data = {
+                    "status": "pending",
+                    "reason": "Agent completed reasoning but output unclear",
+                    "ai_notes": result_text
+                }
+        except Exception:
+            decision_data = {
+                "status": "pending",
+                "reason": "Agent completed reasoning but output unclear",
+                "ai_notes": result_text
+            }
+
+        # Save results to DB
+        db.prior_auths.update_one(
+            {"auth_id": auth_request["auth_id"]},
+            {
+                "$set": {
+                    "ai_processed": True,
+                    "ai_agent_plan": plan_instructions,
+                    "ai_decision_text": result_text,
+                    "ai_decision": decision_data.get("status", "pending"),
+                    "ai_notes": decision_data.get("ai_notes", ""),
+                    "ai_reason": decision_data.get("reason", ""),
+                    "ai_reviewed_at": dtt.now(timezone.utc)
+                }
+            }
+        )
+
+        return decision_data
+
+    except Exception as e:
+        print(f"Agentic AI review failed: {str(e)}")
+        return {"status": "pending", "reason": "Fallback logic used", "ai_notes": str(e)}
+def generate_prompt_for_agent(auth_request, member_data, past_requests):
+    return f"""
+You are an autonomous medical insurance review agent.
+Follow these steps:
+1. Assess the risk level of the procedure.
+2. Check urgency.
+3. Consider patient's profile and history.
+4. Apply insurance policy rules.
+5. Decide: approved, pending, or rejected.
+6. Provide a short reason and any extra notes.
+Respond ONLY in JSON format with keys: status, reason, ai_notes.
+
+Request Details:
+- Procedure: {auth_request['procedure']}
+- Diagnosis: {auth_request['diagnosis']}
+- Urgency: {auth_request['urgency']}
+- Additional Notes: {auth_request['additional_notes']}
+
+Member Profile:
+- ID: {member_data.get('member_id')}
+- Age: {member_data.get('age')}
+- Gender: {member_data.get('gender')}
+- Chronic Conditions: {member_data.get('conditions', [])}
+
+Historical Requests:
+{past_requests if past_requests else "No past requests found"}
+"""
+
+def auto_review_auth_with_agent(auth_request, member_data, past_requests):
+    try:
+        context_prompt = generate_prompt_for_agent(auth_request, member_data, past_requests)
+
+        # Azure OpenAI response call
+        response = client.chat.completions.create(
+            deployment_id=AZURE_OPENAI_DEPLOYMENT,
+            messages=[
+                {"role": "system", "content": "You are an autonomous medical insurance review agent."},
+                {"role": "user", "content": context_prompt}
+            ],
+            temperature=0.2,
+            max_tokens=500
+        )
+
+        result_text = response.choices[0].message["content"]
+
+        try:
+            json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
+            if json_match:
+                decision_data = json.loads(json_match.group())
+            else:
+                decision_data = {
+                    "status": "pending",
+                    "reason": "Agent reasoning completed but decision unclear",
+                    "ai_notes": result_text
+                }
+        except json.JSONDecodeError:
+            decision_data = {
+                "status": "pending",
+                "reason": "Agent reasoning completed but decision unclear",
+                "ai_notes": result_text
+            }
+
+        # Store results in DB
+        db.prior_auths.update_one(
+            {"auth_id": auth_request["auth_id"]},
+            {
+                "$set": {
+                    "ai_processed": True,
+                    "ai_agent_prompt": context_prompt,
+                    "ai_decision_text": result_text,
+                    "ai_decision": decision_data.get("status", "pending"),
+                    "ai_notes": decision_data.get("ai_notes", ""),
+                    "ai_reason": decision_data.get("reason", ""),
+                    "ai_reviewed_at": dtt.now(timezone.utc)
+                }
+            }
+        )
+
+        return decision_data
+
+    except Exception as e:
+        print(f"Agentic AI review failed: {str(e)}")
+        return {"status": "pending", "reason": "Fallback logic used", "ai_notes": str(e)}
+
+def format_request_description(raw_input):
+    """
+    Format medical request description using Azure OpenAI (Agentic AI approach).
+    """
+    try:
+
+        response = client.chat.completions.create(
+            model=os.getenv("AZURE_OPENAI_DEPLOYMENT"),
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert medical writing assistant. Format and clarify medical request descriptions professionally."
+                },
+                {
+                    "role": "user",
+                    "content": f"Format this request clearly and professionally: {raw_input}"
+                }
+            ],
+            max_tokens=300,
+            temperature=0.5
+        )
+
+        return response.choices[0].message["content"].strip()
+
+    except Exception as e:
+        print(f"Error formatting description: {str(e)}")
+        return raw_input
+
+def get_autocomplete_suggestion(input_text):
+    """
+    Get autocomplete suggestions using Azure OpenAI with an agentic reasoning approach.
+    """
+    try:
+        response = client.chat.completions.create(
+            model=AZURE_OPENAI_DEPLOYMENT,
+            reasoning={"effort": "medium"},
+            input=[
+                {
+                    "role": "system",
+                    "content": "You are an intelligent autocomplete assistant. Predict and suggest the most likely text completion."
+                },
+                {
+                    "role": "user",
+                    "content": input_text
+                }
+            ],
+            max_output_tokens=50
+        )
+        return response.output_text.strip()
+    except Exception as e:
+        print(f"Error getting autocomplete: {str(e)}")
+        return ""
+
+def get_ai_health_buddy_response(user_message, member_data, past_requests):
+    """
+    Get AI health buddy response for member queries using Azure OpenAI (agentic style).
+    """
+    try:
+        # Build context for the AI
+        prompt = f"""
+You are a helpful AI health buddy for a member. Based on their profile and history, provide helpful advice.
+
+Member Profile:
+- Age: {member_data.get('age', 'Unknown')}
+- Gender: {member_data.get('gender', 'Unknown')}
+- Conditions: {', '.join(member_data.get('conditions', []))}
+- Past Requests: {past_requests if past_requests else 'None'}
+
+User Question: {user_message}
+
+Rules:
+- Do not give a direct diagnosis.
+- Suggest safe, general next steps.
+- Recommend seeing a medical professional when necessary.
+- Provide information in a clear, concise, and empathetic tone.
+"""
+
+        # Call Azure OpenAI Chat Completion
+        response = client.chat.completions.create(
+            model=os.environ["AZURE_OPENAI_DEPLOYMENT"],
+            messages=[
+                {"role": "system", "content": "You are a helpful AI health assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7
+        )
+
+        return response.choices[0].message.content.strip()
+    
+    except Exception as e:
+        print(f"Error getting health buddy response: {e}")
+        return "I'm sorry, I'm having trouble processing your request right now. Please try again later."
+
+
+
 # =====================================================
 # Insurance Management Endpoints
 # =====================================================
@@ -118,6 +414,7 @@ def get_all_insurance_plans(current_user):
             'payer_name': 1,
             'unit_price': 1,
             'coverage_types': 1,
+            'coverage_category': 1,  # Added coverage_category
             'deductible_amounts': 1,
             'copay_amounts': 1,
             'max_out_of_pocket': 1,
@@ -127,7 +424,7 @@ def get_all_insurance_plans(current_user):
         
         # Add validity date (1 year from now) to each plan
         for payer in payers:
-            payer['validity_date'] = (datetime.datetime.now() + datetime.timedelta(days=365)).strftime('%Y-%m-%d')
+            payer['validity_date'] = (dtt.now() + timedelta(days=365)).strftime('%Y-%m-%d')
             payer['_id'] = str(payer['_id'])
         
         return jsonify({
@@ -187,12 +484,12 @@ def subscribe_to_insurance(current_user):
             'amount_paid': payer['unit_price'],
             'amount_reimbursed': 0,
             'remaining_balance': payer['unit_price'],
-            'validity_date': (datetime.datetime.now() + datetime.timedelta(days=365)).strftime('%Y-%m-%d'),
+            'validity_date': (dtt.now() + timedelta(days=365)).strftime('%Y-%m-%d'),
             'coverage_scheme': payer.get('coverage_types', []),
             'deductible': random.choice(payer.get('deductible_amounts', [500, 1000, 1500])),
             'copay': random.choice(payer.get('copay_amounts', [15, 25, 35])),
             'status': 'active',
-            'subscription_date': datetime.datetime.now(),
+            'subscription_date': dtt.now(),
             'claims_history': []
         }
         
@@ -377,7 +674,7 @@ def register():
         'name': name,
         'email': email,
         'password_hash': hashed_pw,
-        'createdAt': datetime.datetime.utcnow()
+        'createdAt': dtt.now(timezone.utc)
     }
     
     # Add user-specific fields
@@ -404,7 +701,7 @@ def register():
     return jsonify({
         'message': 'User registered successfully', 
         'user_id': str(user_id)
-    }), 201
+    }, 201)
 
 @app.route('/register-payer', methods=['POST'])
 def register_payer():
@@ -447,7 +744,8 @@ def register_payer():
         'provider_ids': [],
         'pending_cases': [],
         'approved_cases': [],
-        'total_amount_paid': 0
+        'total_amount_paid': 0,
+        'coverage_category': []  # New field for coverage categories
     })
 
     return jsonify({
@@ -476,26 +774,26 @@ def login():
     password = data.get('password')
     user_type = data.get('user_type')
 
-    # Validate user type
-    if user_type not in ['member', 'provider', 'payer']:
-        return jsonify({'message': 'Invalid user type'}), 400
-
-    # Determine collection based on user type
+    # Validate user type and determine collection
     if user_type == 'member':
         collection = db.members
     elif user_type == 'provider':
         collection = db.providers
     elif user_type == 'payer':
         collection = db.payers
+    else:
+        return jsonify({'message': 'Invalid user type'}), 400
 
     # Find user by email
     user = collection.find_one({'email': email})
     if not user:
+        print(f"Login failed: User with email {email} not found.")  # Debug log
         return jsonify({'message': 'Invalid email or password'}), 401
 
     # Verify password (handle different field names)
     password_field = 'password_hash' if user_type in ['member', 'provider'] else 'password'
     if not bcrypt_flask.check_password_hash(user[password_field], password):
+        print(f"Login failed: Incorrect password for email {email}.")  # Debug log
         return jsonify({'message': 'Invalid email or password'}), 401
 
     # Generate JWT token
@@ -503,7 +801,7 @@ def login():
         'email': user['email'],
         'user_type': user_type,
         'name': user.get('name', 'Unknown User'),
-        'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=3)
+        'exp': dtt.now(timezone.utc) + timedelta(hours=3)  # Updated to use timezone-aware datetime
     }, app.config['SECRET_KEY'], algorithm='HS256')
 
     return jsonify({
@@ -873,7 +1171,7 @@ def submit_prior_auth(current_user):
             'urgency': data.get('urgency', 'routine'),
             'additional_notes': data.get('additionalNotes', ''),
             'status': 'pending',
-            'submitted_at': datetime.datetime.utcnow(),
+            'submitted_at': dtt.now(timezone.utc),
             'ai_processed': False,
             'submitted_by': {
                 'name': current_user['name'],
@@ -882,11 +1180,15 @@ def submit_prior_auth(current_user):
             }
         }
 
+        member_data = list(db.members.find({'member_id': member_id}, {'_id': 0}))
+
+        past_requests = list(db.prior_auths.find({'member_id': member_id}, {'_id': 0}))
+
         # Insert into database
         result = db.prior_auths.insert_one(auth_request)
 
         # Trigger AI processing
-        auto_review_auth(auth_request)
+        auto_review_auth(auth_request, member_data, past_requests)
 
         return jsonify({
             'message': 'Prior authorization request submitted successfully',
@@ -950,7 +1252,7 @@ def approve_reject_auth(current_user):
                 '$set': {
                     'status': decision, 
                     'review_notes': notes,
-                    'reviewed_at': datetime.datetime.utcnow(),
+                    'reviewed_at': dtt.now(timezone.utc),
                     'reviewed_by': current_user['email']
                 }
             }
@@ -1024,6 +1326,8 @@ def payer_dashboard(current_user):
         if not payer:
             return jsonify({'message': 'Payer not found'}), 404
 
+        # Include coverage_category in the response
+        payer['coverage_category'] = payer.get('coverage_category', [])
         # Remove sensitive data
         payer.pop('password', None)
         
@@ -1102,13 +1406,6 @@ def get_payer_subscriptions(current_user):
             'success': False,
             'message': f'Error fetching subscriptions: {str(e)}'
         }), 500
-
-
-
-
-
-
-
 
 @app.route('/payer/update-auth', methods=['POST'])
 @token_required
@@ -1255,257 +1552,6 @@ def get_analytics(current_user):
         return jsonify({'message': f'Error fetching analytics: {str(e)}'}), 500
 
 # =====================================================
-# AI Processing Functions
-# =====================================================
-
-def auto_review_auth(auth_request):
-    """
-    Automatically review authorization requests using AI logic.
-    
-    Args:
-        auth_request: The authorization request to review
-    """
-    # Simple AI Logic (can be replaced with ML model inference)
-    high_risk_procedures = ['heart surgery', 'organ transplant', 'brain surgery']
-    urgent_cases = ['emergency', 'urgent']
-
-    decision = 'approved'
-    notes = 'Auto-approved by AI'
-
-    # Check for high-risk procedures or urgent cases
-    if (auth_request['urgency'].lower() in urgent_cases or
-        any(proc in auth_request['procedure'].lower() for proc in high_risk_procedures)):
-        decision = 'pending'
-        notes = 'Auto-flagged for manual review due to high risk or urgency'
-
-    # Update the authorization request with AI decision
-    db.prior_auths.update_one(
-        {'auth_id': auth_request['auth_id']},
-        {
-            '$set': {
-                'status': decision,
-                'ai_processed': True,
-                'ai_decision': decision,
-                'ai_notes': notes,
-                'ai_reviewed_at': datetime.datetime.utcnow()
-            }
-        }
-    )
-
-def generate_prompt_for_llm(auth_request, member_data, past_requests):
-    """
-    Generate a prompt for LLM-based AI review.
-    
-    Args:
-        auth_request: The authorization request
-        member_data: Member profile data
-        past_requests: Historical requests for the member
-        
-    Returns:
-        Formatted prompt string
-    """
-    prompt = f"""
-You are a medical insurance AI agent reviewing a prior authorization request.
-
-Request Details:
-- Procedure: {auth_request['procedure']}
-- Diagnosis: {auth_request['diagnosis']}
-- Urgency: {auth_request['urgency']}
-- Additional Notes: {auth_request['additional_notes']}
-
-Member Profile:
-- ID: {member_data.get('member_id')}
-- Age: {member_data.get('age')}
-- Gender: {member_data.get('gender')}
-- Chronic Conditions: {member_data.get('conditions', [])}
-
-Historical Requests:
-{past_requests if past_requests else "No past requests found"}
-
-Task:
-Evaluate the request and respond with:
-- `status`: "approved", "pending", or "rejected"
-- `reason`: A short reason explaining the decision
-- `ai_notes`: Any extra AI observations
-"""
-    return prompt
-
-def auto_review_auth_with_llm(auth_request, member_data, past_requests):
-    """
-    Review authorization request using OpenAI LLM.
-    
-    Args:
-        auth_request: The authorization request
-        member_data: Member profile data
-        past_requests: Historical requests
-        
-    Returns:
-        AI decision dictionary
-    """
-    try:
-        prompt = generate_prompt_for_llm(auth_request, member_data, past_requests)
-        
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "You are an AI prior authorization reviewer."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.4
-        )
-        
-        result = response.choices[0].message.content
-        
-        # Parse the result (expecting JSON-like structure)
-        try:
-            # Try to extract JSON from the response
-            json_match = re.search(r'\{.*\}', result, re.DOTALL)
-            if json_match:
-                decision = json.loads(json_match.group())
-            else:
-                # Fallback parsing
-                decision = {
-                    'status': 'pending',
-                    'reason': 'AI review completed but decision unclear',
-                    'ai_notes': result
-                }
-        except json.JSONDecodeError:
-            decision = {
-                'status': 'pending',
-                'reason': 'AI review completed but decision unclear',
-                'ai_notes': result
-            }
-        
-        # Update the authorization request with AI decision
-        db.prior_auths.update_one(
-            {'auth_id': auth_request['auth_id']},
-            {
-                '$set': {
-                    'ai_processed': True,
-                    'ai_decision_text': result,
-                    'ai_decision': decision.get('status', 'pending'),
-                    'ai_notes': decision.get('ai_notes', ''),
-                    'ai_reason': decision.get('reason', ''),
-                    'ai_reviewed_at': datetime.datetime.utcnow()
-                }
-            }
-        )
-        
-        return decision
-        
-    except Exception as e:
-        print(f"Error in AI review: {str(e)}")
-        # Fallback to simple AI logic
-        return auto_review_auth(auth_request)
-
-def format_request_description(raw_input):
-    """
-    Format medical request description using AI.
-    
-    Args:
-        raw_input: Raw user input
-        
-    Returns:
-        Formatted description
-    """
-    try:
-        prompt = f"""
-Format the following medical request description into a professional and clear format suitable for prior authorization review. Keep it brief but medically sound:
-
-"{raw_input}"
-"""
-        
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "You are a medical writing assistant."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.3
-        )
-        
-        return response.choices[0].message.content.strip()
-        
-    except Exception as e:
-        print(f"Error formatting description: {str(e)}")
-        return raw_input
-
-def get_autocomplete_suggestion(input_text):
-    """
-    Get autocomplete suggestions using AI.
-    
-    Args:
-        input_text: Partial user input
-        
-    Returns:
-        Suggestion string
-    """
-    try:
-        prompt = f"""
-The user is filling a prior authorization form. Suggest an autocomplete continuation for: "{input_text}"
-
-Provide a brief, relevant suggestion that would help complete the medical form field.
-"""
-        
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "You are a medical form assistant."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.5,
-            max_tokens=50
-        )
-        
-        return response.choices[0].message.content.strip()
-        
-    except Exception as e:
-        print(f"Error getting autocomplete: {str(e)}")
-        return ""
-
-def get_ai_health_buddy_response(user_message, member_data, past_requests):
-    """
-    Get AI health buddy response for member queries.
-    
-    Args:
-        user_message: User's health question
-        member_data: Member profile data
-        past_requests: Past medical requests
-        
-    Returns:
-        AI response string
-    """
-    try:
-        prompt = f"""
-You are a helpful AI health buddy for a member. Based on their profile and history, provide helpful advice.
-
-Member Profile:
-- Age: {member_data.get('age', 'Unknown')}
-- Gender: {member_data.get('gender', 'Unknown')}
-- Conditions: {member_data.get('conditions', [])}
-- Past Requests: {past_requests if past_requests else 'None'}
-
-User Question: {user_message}
-
-Provide helpful, medical advice while being careful not to give specific medical diagnoses. Suggest appropriate next steps and providers if relevant.
-"""
-        
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "You are a helpful AI health assistant."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.7
-        )
-        
-        return response.choices[0].message.content.strip()
-        
-    except Exception as e:
-        print(f"Error getting health buddy response: {str(e)}")
-        return "I'm sorry, I'm having trouble processing your request right now. Please try again later."
-
-# =====================================================
 # AI-Powered Endpoints
 # =====================================================
 
@@ -1536,7 +1582,7 @@ def auto_review_prior_auth(current_user):
         past_requests = list(db.prior_auths.find({'member_id': auth_request['member_id']}))
         
         # Perform AI review
-        decision = auto_review_auth_with_llm(auth_request, member, past_requests)
+        decision = auto_review_auth_with_agent(auth_request, member, past_requests)
         
         return jsonify({
             'message': 'Auto-review completed successfully',
@@ -1629,41 +1675,31 @@ def health_buddy_chat(current_user):
 @token_required
 def submit_pending_request(current_user):
     """
-    Submit a pending request from member that needs provider approval.
+    Submit a pending request from a member that needs provider approval.
     """
     try:
         data = request.get_json()
-        
-        # Validate required fields
         required_fields = ['procedure', 'diagnosis', 'provider_info', 'urgency']
         if not all(field in data for field in required_fields):
             return jsonify({'message': 'Missing required fields'}), 400
-            
+
         # Get member data
         member = db.members.find_one({'email': current_user['email']})
         if not member:
             return jsonify({'message': 'Member not found'}), 404
-            
-        # Handle provider info (could be ID, name, or email)
+
+        # Handle provider info (ID, name, or email)
         provider_info = data['provider_info']
-        provider = None
-        
-        # Try to find provider by different methods
-        if provider_info.startswith('P'):
-            # Assume it's a provider ID
-            provider = db.providers.find_one({'provider_id': provider_info})
-        else:
-            # Try to find by name or email
-            provider = db.providers.find_one({
-                '$or': [
-                    {'name': {'$regex': provider_info, '$options': 'i'}},
-                    {'email': {'$regex': provider_info, '$options': 'i'}}
-                ]
-            })
-            
+        provider = db.providers.find_one({
+            '$or': [
+                {'provider_id': provider_info},
+                {'name': {'$regex': provider_info, '$options': 'i'}},
+                {'email': {'$regex': provider_info, '$options': 'i'}}
+            ]
+        })
         if not provider:
-            return jsonify({'message': 'Provider not found in database'}), 404
-            
+            return jsonify({'message': 'Provider not found'}), 404
+
         # Create pending request
         pending_request = {
             'request_id': f"PEND{random.randint(1000, 9999)}",
@@ -1676,23 +1712,22 @@ def submit_pending_request(current_user):
             'procedure': data['procedure'],
             'diagnosis': data['diagnosis'],
             'urgency': data['urgency'],
-            'additional_notes': data.get('additional_notes', ''),
+            'additional_notes': data.get('additionalNotes', ''),
             'status': 'pending_provider_approval',
-            'submitted_at': datetime.datetime.utcnow(),
+            'submitted_at': dtt.now(timezone.utc),
             'member_notes': data.get('member_notes', '')
         }
-        
+
         # Insert into pending requests collection
         db.pending_requests.insert_one(pending_request)
-        
+
         return jsonify({
-            'message': 'Pending request submitted successfully',
-            'request_id': pending_request['request_id'],
-            'provider_name': provider['name']
+            'message': 'Request submitted successfully',
+            'request_id': pending_request['request_id']
         }), 201
-        
+
     except Exception as e:
-        return jsonify({'message': f'Error submitting pending request: {str(e)}'}), 500
+        return jsonify({'message': f'Error submitting request: {str(e)}'}), 500
 
 @app.route('/provider/pending-requests', methods=['GET'])
 @token_required
@@ -1764,7 +1799,7 @@ def approve_pending_request(current_user):
             'provider_notes': provider_notes,
             'member_notes': pending_request['member_notes'],
             'status': 'pending',
-            'submitted_at': datetime.datetime.utcnow(),
+            'submitted_at': dtt.now(timezone.utc),
             'ai_processed': False,
             'source': 'provider_approved'
         }
@@ -1778,7 +1813,7 @@ def approve_pending_request(current_user):
             {
                 '$set': {
                     'status': 'approved_by_provider',
-                    'approved_at': datetime.datetime.utcnow(),
+                    'approved_at': dtt.now(timezone.utc),
                     'provider_notes': provider_notes,
                     'final_auth_id': auth_request['auth_id']
                 }
@@ -1865,7 +1900,7 @@ def health_check():
     return jsonify({
         'status': 'healthy',
         'message': 'Prior Authorization System is running',
-        'timestamp': datetime.datetime.utcnow().isoformat()
+        'timestamp': dtt.now(timezone.utc).isoformat()
     }), 200
 
 # =====================================================
@@ -1877,18 +1912,6 @@ def health_check():
 def submit_claim(current_user):
     """
     Submit a new claim from provider with insurance plan selection.
-    Used by ProviderPortal component.
-    
-    Expected JSON payload:
-    {
-        "member_id": "M001",
-        "provider_id": "P001", 
-        "procedure": "MRI Scan",
-        "diagnosis": "Lower back pain",
-        "urgency": "routine",
-        "additionalNotes": "Optional clinical notes",
-        "subscription_id": "SUB123456"
-    }
     """
     try:
         data = request.get_json()
@@ -1942,18 +1965,10 @@ def submit_claim(current_user):
             "diagnosis": data["diagnosis"],
             "urgency": data["urgency"],
             "additional_notes": data.get("additionalNotes", ""),
-            "status": "pending",
-            "submitted_at": datetime.datetime.utcnow(),
-            "claim_amount": claim_amount,
-            "amount_reimbursed": 0,
-            "remaining_balance_before": subscription["remaining_balance"],
-            "remaining_balance_after": subscription["remaining_balance"] - claim_amount,
-            "submitted_by": {
-                "name": current_user.get('name', 'Unknown'),
                 "email": current_user['email'],
                 "user_type": current_user['user_type']
             }
-        }
+        
 
         # Insert claim into database
         inserted = db.claims.insert_one(claim)
@@ -2071,6 +2086,9 @@ def get_member_claims_by_id(current_user, member_id):
             # Get provider details
             provider = db.providers.find_one({"provider_id": claim["provider_id"]})
             
+            # Ensure submitted_at is properly formatted
+            claim['submitted_at'] = claim.get('submitted_at').isoformat() if claim.get('submitted_at') else None
+            
             results.append({
                 "claim_id": str(claim["_id"]),
                 "provider_id": claim["provider_id"],
@@ -2104,7 +2122,7 @@ def update_claim_status(current_user, claim_id):
         new_status = data.get('status')
         notes = data.get('notes', '')
 
-        if new_status not in ['approved', 'rejected', 'pending']:
+        if new_status not in ['approved', 'rejected', 'pending_provider_approval', 'under_review']:
             return jsonify({"message": "Invalid status"}), 400
 
         # Update claim status
@@ -2114,7 +2132,7 @@ def update_claim_status(current_user, claim_id):
                 "$set": {
                     "status": new_status,
                     "review_notes": notes,
-                    "reviewed_at": datetime.datetime.utcnow(),
+                    "reviewed_at": dtt.now(timezone.utc),
                     "reviewed_by": current_user['email']
                 }
             }
@@ -2282,12 +2300,12 @@ def populate_sample_data():
                 'amount_paid': payer_doc['unit_price'],
                 'amount_reimbursed': random.randint(0, payer_doc['unit_price'] // 2),
                 'remaining_balance': payer_doc['unit_price'] - random.randint(0, payer_doc['unit_price'] // 2),
-                'validity_date': (datetime.datetime.now() + datetime.timedelta(days=random.randint(30, 365))).strftime('%Y-%m-%d'),
+                'validity_date': (dtt.now() + timedelta(days=random.randint(30, 365))).strftime('%Y-%m-%d'),
                 'coverage_scheme': payer_doc.get('coverage_types', []),
                 'deductible': random.choice(payer_doc.get('deductible_amounts', [500, 1000, 1500])),
                 'copay': random.choice(payer_doc.get('copay_amounts', [15, 25, 35])),
                 'status': 'active',
-                'subscription_date': datetime.datetime.now() - datetime.timedelta(days=random.randint(1, 180)),
+                'subscription_date': dtt.now() - timedelta(days=random.randint(1, 180)),
                 'claims_history': []
             }
             
@@ -2307,16 +2325,18 @@ def populate_sample_data():
     # ---- Create Claims ----
     procedures = ["MRI Scan", "X-Ray", "Blood Test", "Physical Therapy", "Surgery", "Consultation", "Medication", "Emergency Visit"]
     
+    claim_statuses = ["pending_provider_approval", "under_review", "approved", "rejected"]  # Updated statuses
     for i in range(300):
         cid = f"C{i+1:03}"
         member_obj_id = random.choice(member_ids)
         provider_obj_id = random.choice(provider_ids)
         payer_obj_id = random.choice(payer_ids)
-        
+
         # Get the actual member_id and provider_id strings
         member_doc = db.members.find_one({'_id': member_obj_id})
         provider_doc = db.providers.find_one({'_id': provider_obj_id})
-        
+        payer_doc = db.payers.find_one({'_id': payer_obj_id})
+
         member_id_str = member_doc['member_id'] if member_doc else f"M{random.randint(1,50):03}"
         provider_id_str = provider_doc['provider_id'] if provider_doc else f"P{random.randint(1,20):03}"
 
@@ -2328,13 +2348,13 @@ def populate_sample_data():
         })
         
         claim_amount = random.randint(500, 3000)
-        
+
         claim_doc = {
             "claim_id": cid,
             "member_id": member_id_str,
-            "member_name": member_doc['name'],
+            "member_name": member_doc['name'] if member_doc else "Unknown",
             "provider_id": provider_id_str,
-            "provider_name": provider_doc['name'],
+            "provider_name": provider_doc['name'] if provider_doc else "Unknown",
             "payer_id": payer_doc['payer_id'],
             "payer_name": payer_doc['name'],
             "subscription_id": subscription['subscription_id'] if subscription else None,
@@ -2344,8 +2364,8 @@ def populate_sample_data():
             "medication_type": random.choice(["Diagnosis", "Treatment", "Preventive"]),
             "claim_amount": claim_amount,
             "amount_reimbursed": claim_amount if random.choice([True, False]) else 0,
-            "status": random.choice(["pending", "approved", "rejected"]),
-            "submitted_at": fake.date_time_between(start_date='-1y', end_date='now'),
+            "status": random.choice(claim_statuses),
+            "submitted_at": dtt.now(timezone.utc),  # Ensure UTC-aware timestamp
             "additional_notes": fake.sentence(),
             "remarks": fake.sentence()
         }
@@ -2389,10 +2409,6 @@ def populate_sample_data():
         f.write("\n".join(credentials_log))
 
     print("✅ Sample data created with ObjectId relationships.")
-
-
-
-
 
 # =====================================================
 # Application Entry Point
