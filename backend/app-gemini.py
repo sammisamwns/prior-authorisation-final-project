@@ -16,6 +16,9 @@ Author: Healthcare Prior Auth Team
 Version: 1.0.0
 """
 
+#using gemini api
+
+from pyexpat import model
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_bcrypt import Bcrypt
@@ -32,26 +35,39 @@ import bcrypt
 from bson.objectid import ObjectId
 import json
 import re
-from openai import AzureOpenAI
+import google.generativeai as genai
 
 
 # Load environment variables
 load_dotenv()
 
-
-# Azure OpenAI Configuration working perfectly with firewall error
-
-AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
-AZURE_OPENAI_ENDPOINT = "https://wns-openai-genai-poc-eus-04.openai.azure.com/"
-AZURE_OPENAI_DEPLOYMENT = "gpt-4o"
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_API_ENDPOINT = os.getenv("GEMINI_API_ENDPOINT")
+GEMINI_MODEL_NAME = os.getenv("GEMINI_MODEL_NAME")  # For reference only
 
 
-# Initialize Azure OpenAI client
-client = AzureOpenAI(
-    api_key=AZURE_OPENAI_API_KEY,
-    api_version="2024-02-01",
-    azure_endpoint=AZURE_OPENAI_ENDPOINT
-)
+class GeminiClient:
+    def __init__(self, api_key):
+        genai.configure(api_key=api_key)
+        self.chat = self.Chat()
+
+    class Chat:
+        def completions(self):
+            return self
+
+        def create(self, *, model, messages, temperature=0.7, max_output_tokens=256):
+            response = genai.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+                max_output_tokens=max_output_tokens,
+            )
+            return response
+
+
+# genai.configure(api_key=GEMINI_API_KEY)  # Set your API key
+
+client = GeminiClient(api_key=GEMINI_API_KEY)
 
 
 # Initialize Flask app and extensions
@@ -126,7 +142,7 @@ def token_required(f):
 
 def auto_review_auth(auth_request, member_data, past_requests):
     """
-    Review authorization request using Azure OpenAI Agentic AI.
+    Review authorization request using Gemini Agentic AI.
     """
 
     try:
@@ -170,19 +186,16 @@ Respond ONLY in JSON with keys: status, reason, ai_notes.
         """
 
 
-        # Call Azure OpenAI Chat Completions API
-        response = client.chat.completions.create(
-            model=os.environ["AZURE_OPENAI_DEPLOYMENT"],
-            temperature=0.2,
-            max_tokens=500,
+        response_text = client.chat.create(
             messages=[
                 {"role": "system", "content": plan_instructions},
                 {"role": "user", "content": context_prompt}
-            ]
-        )
+            ],
+            model="gemini-1",
+            temperature=0.2
+            )
 
-        result_text = response.choices[0].message["content"]
-
+        result_text = response_text  # Gemini client returns text directly
         # Extract JSON
         try:
             json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
@@ -253,19 +266,17 @@ Historical Requests:
 def auto_review_auth_with_agent(auth_request, member_data, past_requests):
     try:
         context_prompt = generate_prompt_for_agent(auth_request, member_data, past_requests)
-
-        # Azure OpenAI response call
-        response = client.chat.completions.create(
-            deployment_id=AZURE_OPENAI_DEPLOYMENT,
+        
+        response_text = client.chat.create(
             messages=[
                 {"role": "system", "content": "You are an autonomous medical insurance review agent."},
                 {"role": "user", "content": context_prompt}
             ],
             temperature=0.2,
-            max_tokens=500
+            model="gemini-1"
         )
 
-        result_text = response.choices[0].message["content"]
+        result_text = response_text  # Gemini client returns text directly
 
         try:
             json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
@@ -308,12 +319,10 @@ def auto_review_auth_with_agent(auth_request, member_data, past_requests):
 
 def format_request_description(raw_input):
     """
-    Format medical request description using Azure OpenAI (Agentic AI approach).
+    Format medical request description using Gemini (Agentic AI approach).
     """
     try:
-
-        response = client.chat.completions.create(
-            model=os.getenv("AZURE_OPENAI_DEPLOYMENT"),
+        response_text = client.chat.create(
             messages=[
                 {
                     "role": "system",
@@ -324,11 +333,12 @@ def format_request_description(raw_input):
                     "content": f"Format this request clearly and professionally: {raw_input}"
                 }
             ],
-            max_tokens=300,
+            model="gemini-1",
+            max_output_tokens=300,
             temperature=0.5
         )
 
-        return response.choices[0].message["content"].strip()
+        return response_text.strip()
 
     except Exception as e:
         print(f"Error formatting description: {str(e)}")
@@ -336,7 +346,7 @@ def format_request_description(raw_input):
 
 def get_autocomplete_suggestion(input_text):
     """
-    Get autocomplete suggestions using Azure OpenAI with an agentic reasoning approach.
+    Get autocomplete suggestions using Gemini with an agentic reasoning approach.
     """
 
     try:
@@ -358,21 +368,22 @@ def get_autocomplete_suggestion(input_text):
                 "content": input_text
             }
         ]
-        response = client.chat.completions.create(
-            model=AZURE_OPENAI_DEPLOYMENT,
+        response_text = client.chat.create(
             messages=messages,
-            reasoning={"effort": "medium"},
-            max_output_tokens=50
+            temperature=0.5,             # add if needed
+            max_output_tokens=50,
+            model="gemini-1"
         )
 
-        return response.output_text.strip()
+        return response_text.strip()
+
     except Exception as e:
         print(f"Error getting autocomplete: {str(e)}")
         return ""
 
 def get_ai_health_buddy_response(user_message, member_doc, provider_data, payer_data, past_requests, member_provider, member_payer):
     """
-    Get AI health buddy response for member queries using Azure OpenAI (agentic style).
+    Get AI health buddy response for member queries using Gemini (agentic style).
     """
     try:
         # Build context for the AI
@@ -450,9 +461,7 @@ def get_ai_health_buddy_response(user_message, member_doc, provider_data, payer_
     4. Next Steps for the patient.
     """
 
-        # Call Azure OpenAI Chat Completion
-        response = client.chat.completions.create(
-            model=os.environ["AZURE_OPENAI_DEPLOYMENT"],
+        response_text = client.chat.create(
             messages=[
                 {"role": "system", "content": "You are a helpful AI health assistant."},
                 {"role": "user", "content": prompt}
@@ -460,8 +469,8 @@ def get_ai_health_buddy_response(user_message, member_doc, provider_data, payer_
             temperature=0.7
         )
 
-        return response.choices[0].message.content.strip()
-    
+        return response_text.strip()
+
     except Exception as e:
         print(f"Error getting health buddy response: {e}")
         return "I'm sorry, I'm having trouble processing your request right now. Please try again later."
@@ -1506,9 +1515,7 @@ def submit_pending_request(current_user):
                 {'email': {'$regex': provider_info, '$options': 'i'}}
             ]
         })
-        insurance_subscription = db.insurance_subscriptions.find_one({'member_id': member['member_id']})
-        payer_id = insurance_subscription['payer_id'] if insurance_subscription else None
-        payer = db.payers.find_one({'payer_id': payer_id})
+        payer = db.payers.find_one({'payer_id': member['payer_id']})
         if not provider:
             return jsonify({'message': 'Provider not found'}), 404
 
