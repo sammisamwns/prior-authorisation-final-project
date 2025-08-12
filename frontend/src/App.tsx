@@ -10,7 +10,6 @@ import ProviderPortal from "./components/ProviderPortal";
 import PayerPortal from "./components/PayerPortal";
 import ProfilePage from "./components/ProfilePage";
 import PriorAuthAIStatus from "./components/PriorAuthAIStatus";
-import AIStatusPage from "./pages/AIStatusPage";
 import MemberProfilePage from "./pages/MemberProfilePage";
 import ProviderProfilePage from "./pages/ProviderProfilePage";
 import PayerProfilePage from "./pages/PayerProfilePage";
@@ -30,7 +29,6 @@ const App = () => (
               <Route path="/payer" element={<PayerPortal />} />
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="/status" element={<PriorAuthAIStatus />} />
-              <Route path="/ai-status" element={<AIStatusPage />} />
               <Route path="/profile/member" element={<MemberProfilePage />} />
               <Route path="/profile/provider" element={<ProviderProfilePage />} />
               <Route path="/profile/payer" element={<PayerProfilePage />} />

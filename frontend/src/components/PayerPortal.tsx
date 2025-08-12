@@ -39,25 +39,25 @@ const PayerPortal = () => {
   const fetchRequests = async () => {
     try {
       setLoading(true);
-  const response = await fetch(`${API_BASE_URL}/payer/requests`, {
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+      const response = await fetch(`${API_BASE_URL}/payer/pending_requests`, {
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
       });
-      
+
       if (!response.ok) {
-        throw new Error('Failed to fetch requests');
+        throw new Error("Failed to fetch pending requests");
       }
-      
+
       const data = await response.json();
       setAuthRequests(data.requests || []);
     } catch (error) {
-      console.error('Error fetching requests:', error);
+      console.error("Error fetching pending requests:", error);
       toast({
         title: "Error",
-        description: "Failed to load authorization requests.",
-        variant: "destructive"
+        description: "Failed to load pending requests.",
+        variant: "destructive",
       });
     } finally {
       setLoading(false);
@@ -167,15 +167,7 @@ const PayerPortal = () => {
               </div>
             </div>
             <div className="flex space-x-2">
-              <Button
-                onClick={() => navigate('/ai-status')}
-                variant="outline"
-                size="sm"
-                className="flex items-center space-x-2"
-              >
-                <Bot className="w-4 h-4" />
-                <span>AI Status</span>
-              </Button>
+              
               <Button
                 onClick={() => navigate('/profile/payer')}
                 variant="outline"

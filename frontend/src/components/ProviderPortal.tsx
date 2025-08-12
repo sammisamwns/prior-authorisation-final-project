@@ -23,10 +23,8 @@ interface ProviderProfile {
   };
 }
 
-
-
-interface ClaimRecord {
-  claim_id: string;
+interface PriorAuthRecord {
+  auth_id: string;
   member_id: string;
   member_name: string;
   procedure: string;
@@ -66,7 +64,7 @@ interface InsuranceSubscription {
 
 const ProviderPortal = () => {
   const [providerProfile, setProviderProfile] = useState<ProviderProfile | null>(null);
-  const [claimsHistory, setClaimsHistory] = useState<ClaimRecord[]>([]);
+  const [priorAuthHistory, setPriorAuthHistory] = useState<PriorAuthRecord[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [insuranceSubscriptions, setInsuranceSubscriptions] = useState<InsuranceSubscription[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -101,7 +99,7 @@ const ProviderPortal = () => {
 
   useEffect(() => {
     if (providerProfile?.profile.provider_id) {
-      fetchClaimsHistory();
+      fetchPriorAuthHistory();
       fetchPendingRequests();
     }
   }, [providerProfile]);
@@ -167,17 +165,13 @@ const ProviderPortal = () => {
     }
   };
 
-
-
-
-
-  const fetchClaimsHistory = async () => {
+  const fetchPriorAuthHistory = async () => {
     if (!providerProfile?.profile.provider_id) return;
-    
+
     setIsLoadingClaims(true);
     try {
       const token = localStorage.getItem("authToken");
-  const response = await fetch(`${API_BASE_URL}/claims/provider/${providerProfile.profile.provider_id}`, {
+      const response = await fetch(`${API_BASE_URL}/prior-auth`, { // Updated to fetch from prior_auth
         headers: {
           "Authorization": `Bearer ${token}`,
           "Content-Type": "application/json",
@@ -186,20 +180,20 @@ const ProviderPortal = () => {
 
       if (response.ok) {
         const data = await response.json();
-        setClaimsHistory(data.claims || []);
+        setPriorAuthHistory(data.prior_auths || []);
       } else {
-        console.error('Failed to fetch claims history');
+        console.error('Failed to fetch prior auth history');
         toast({
           title: "Error",
-          description: "Failed to load claims history.",
+          description: "Failed to load prior auth history.",
           variant: "destructive",
         });
       }
     } catch (error) {
-      console.error('Error fetching claims history:', error);
+      console.error('Error fetching prior auth history:', error);
       toast({
         title: "Connection Error",
-        description: "Unable to fetch claims history.",
+        description: "Unable to fetch prior auth history.",
         variant: "destructive",
       });
     } finally {
@@ -274,7 +268,7 @@ const ProviderPortal = () => {
 
     try {
       const token = localStorage.getItem("authToken");
-  const response = await fetch(`${API_BASE_URL}/claims`, {
+      const response = await fetch(`${API_BASE_URL}/prior-auth`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${token}`,
@@ -295,8 +289,8 @@ const ProviderPortal = () => {
 
       if (response.ok) {
         toast({
-          title: "Claim Submitted",
-          description: `Claim submitted successfully. Claim ID: ${data.claim_id}`,
+          title: "Prior Auth Submitted",
+          description: `Request submitted successfully. Auth ID: ${data.auth_id}`,
         });
         
         // Reset form
@@ -309,17 +303,17 @@ const ProviderPortal = () => {
           subscription_id: ""
         });
         
-        // Refresh claims history
-        fetchClaimsHistory();
+        // Refresh prior auth history
+        fetchPriorAuthHistory();
       } else {
         toast({
           title: "Submission Error",
-          description: data.message || "Unable to submit claim.",
+          description: data.message || "Unable to submit prior auth.",
           variant: "destructive",
         });
       }
     } catch (error) {
-      console.error('Error submitting claim:', error);
+      console.error('Error submitting prior auth:', error);
       toast({
         title: "Connection Error",
         description: "Unable to connect to the server.",
@@ -335,7 +329,7 @@ const ProviderPortal = () => {
     try {
       setIsLoadingPendingRequests(true);
       const token = localStorage.getItem("authToken");
-  const response = await fetch(`${API_BASE_URL}/provider/pending-requests`, {
+    const response = await fetch(`${API_BASE_URL}/provider/pending_requests`, {
         headers: {
           "Authorization": `Bearer ${token}`,
           "Content-Type": "application/json",
@@ -378,7 +372,7 @@ const ProviderPortal = () => {
     setIsApprovingRequest(true);
     try {
       const token = localStorage.getItem("authToken");
-  const response = await fetch(`${API_BASE_URL}/provider/approve-pending-request`, {
+    const response = await fetch(`${API_BASE_URL}/provider/approve-pending-request`, { // Updated endpoint
         method: "POST",
         headers: {
           "Authorization": `Bearer ${token}`,
@@ -386,25 +380,26 @@ const ProviderPortal = () => {
         },
         body: JSON.stringify({
           request_id: requestId,
-          provider_notes: providerNotes
+          decision: "approved",
+          notes: providerNotes,
         }),
       });
-
-      const data = await response.json();
 
       if (response.ok) {
         toast({
           title: "Request Approved",
-          description: `Request approved and submitted to insurance. Auth ID: ${data.auth_id}`,
+          description: "Request approved and moved to prior auth database.",
         });
-        
+
         // Reset form
         setProviderNotes("");
         setSelectedPendingRequest(null);
         
-        // Refresh pending requests
+        // Refresh pending requests and prior auth history
         fetchPendingRequests();
+        fetchPriorAuthHistory();
       } else {
+        const data = await response.json();
         toast({
           title: "Approval Error",
           description: data.message || "Unable to approve request.",
@@ -443,15 +438,7 @@ const ProviderPortal = () => {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Provider Dashboard</h1>
         <div className="flex space-x-2">
-          <Button
-            onClick={() => navigate('/ai-status')}
-            variant="outline"
-            size="sm"
-            className="flex items-center space-x-2"
-          >
-            <Bot className="w-4 h-4" />
-            <span>AI Status</span>
-          </Button>
+          
           <Button
             onClick={() => navigate('/profile/provider')}
             variant="outline"
@@ -522,7 +509,7 @@ const ProviderPortal = () => {
           }`}
         >
           <FileText className="w-4 h-4" />
-          <span>Submit Claim</span>
+          <span>Submit Prior Auth</span>
         </button>
         <button
           onClick={() => setActiveTab("claims-history")}
@@ -533,7 +520,7 @@ const ProviderPortal = () => {
           }`}
         >
           <History className="w-4 h-4" />
-          <span>Claims History</span>
+          <span>Prior Auth History</span>
         </button>
         <button
           onClick={() => setActiveTab("pending-requests")}
@@ -562,9 +549,9 @@ const ProviderPortal = () => {
                 <FileText className="w-5 h-5 text-white" />
               </div>
               <div>
-                <CardTitle>Submit Claim Request</CardTitle>
+                <CardTitle>Submit Prior Auth Request</CardTitle>
                 <CardDescription>
-                  Submit a claim request on behalf of a member
+                  Submit a prior authorization request on behalf of a member
                 </CardDescription>
               </div>
             </div>
@@ -727,14 +714,14 @@ const ProviderPortal = () => {
                   <History className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <CardTitle>Claims History</CardTitle>
+                  <CardTitle>Prior Auth History</CardTitle>
                   <CardDescription>
-                    View all claims submitted by your practice
+                    View all prior auth requests submitted by your practice
                   </CardDescription>
                 </div>
               </div>
               <Button
-                onClick={fetchClaimsHistory}
+                onClick={fetchPriorAuthHistory}
                 disabled={isLoadingClaims}
                 variant="outline"
                 size="sm"
@@ -753,18 +740,18 @@ const ProviderPortal = () => {
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                 <span className="ml-2 text-gray-600">Loading claims history...</span>
               </div>
-            ) : claimsHistory.length === 0 ? (
+            ) : priorAuthHistory.length === 0 ? (
               <div className="text-center py-8">
                 <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No Claims Found</h3>
-                <p className="text-gray-600">You haven't submitted any claims yet.</p>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No Prior Auths Found</h3>
+                <p className="text-gray-600">You haven't submitted any prior auth requests yet.</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className="border-b border-gray-200">
-                      <th className="text-left py-3 px-4 font-medium text-gray-700">Claim ID</th>
+                      <th className="text-left py-3 px-4 font-medium text-gray-700">Auth ID</th>
                       <th className="text-left py-3 px-4 font-medium text-gray-700">Member ID</th>
                       <th className="text-left py-3 px-4 font-medium text-gray-700">Member Name</th>
                       <th className="text-left py-3 px-4 font-medium text-gray-700">Procedure</th>
@@ -774,54 +761,54 @@ const ProviderPortal = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {claimsHistory.map((claim) => (
-                      <tr key={claim.claim_id} className="border-b border-gray-100 hover:bg-gray-50">
+                    {priorAuthHistory.map((auth) => (
+                      <tr key={auth.auth_id} className="border-b border-gray-100 hover:bg-gray-50">
                         <td className="py-3 px-4 text-sm font-mono text-blue-600">
-                          {claim.claim_id.slice(-8)}
+                          {auth.auth_id?.slice(-8)}
                         </td>
                         <td className="py-3 px-4 text-sm font-medium">
-                          {claim.member_id}
+                          {auth.member_id}
                         </td>
                         <td className="py-3 px-4 text-sm">
-                          {claim.member_name}
+                          {auth.member_name}
                         </td>
                         <td className="py-3 px-4 text-sm">
-                          {claim.procedure}
+                          {auth.procedure}
                         </td>
                         <td className="py-3 px-4 text-sm">
                           <Badge
                             variant="secondary"
                             className={
-                              claim.urgency === "emergency"
+                              auth.urgency === "emergency"
                                 ? "bg-red-100 text-red-800"
-                                : claim.urgency === "urgent"
+                                : auth.urgency === "urgent"
                                 ? "bg-yellow-100 text-yellow-800"
                                 : "bg-green-100 text-green-800"
                             }
                           >
-                            {claim.urgency}
+                            {auth.urgency}
                           </Badge>
                         </td>
                         <td className="py-3 px-4 text-sm">
                           <Badge
                             variant="secondary"
                             className={
-                              claim.status === "approved"
+                              auth.status === "approved"
                                 ? "bg-green-100 text-green-800"
-                                : claim.status === "rejected"
+                                : auth.status === "rejected"
                                 ? "bg-red-100 text-red-800"
                                 : "bg-yellow-100 text-yellow-800"
                             }
                           >
-                            {formatStatus(claim.status)}
+                            {formatStatus(auth.status)}
                           </Badge>
                         </td>
                         <td className="py-3 px-4 text-sm text-gray-600">
                           <div className="flex items-center space-x-1">
                             <Calendar className="w-3 h-3" />
                             <span>
-                              {claim.submitted_at
-                                ? new Date(claim.submitted_at).toLocaleDateString()
+                              {auth.submitted_at.$date
+                                ? new Date(auth.submitted_at.$date).toLocaleDateString()
                                 : "N/A"}
                             </span>
                           </div>
@@ -886,7 +873,7 @@ const ProviderPortal = () => {
                       <div className="flex justify-between items-start mb-4">
                         <div>
                           <h4 className="text-lg font-semibold text-gray-900">{request.procedure}</h4>
-                          <p className="text-sm text-gray-600">{request.diagnosis}</p>
+                          <p className="text-sm text-gray-600"><strong>Request Diagnosis:</strong> {request.diagnosis}</p>
                           <div className="mt-2 space-y-1">
                             <p className="text-sm text-gray-500">
                               <strong>Member:</strong> {request.member_name} ({request.member_id})
@@ -895,7 +882,7 @@ const ProviderPortal = () => {
                               <strong>Urgency:</strong> {request.urgency}
                             </p>
                             <p className="text-sm text-gray-500">
-                              <strong>Submitted:</strong> {new Date(request.submitted_at).toLocaleDateString()}
+                              <strong>Submitted:</strong> {new Date(request.submitted_at.$date).toLocaleDateString()}
                             </p>
                           </div>
                           {request.additional_notes && (
@@ -921,7 +908,7 @@ const ProviderPortal = () => {
                       <div className="space-y-4">
                         <div>
                           <Label htmlFor={`provider_notes_${request.request_id}`} className="text-sm font-medium text-gray-700">
-                            Provider Notes *
+                            Provider Notes (optional)
                           </Label>
                           <Textarea
                             id={`provider_notes_${request.request_id}`}
@@ -935,7 +922,30 @@ const ProviderPortal = () => {
                             className="mt-1 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
                           />
                         </div>
-                        
+
+                        <div className="space-y-2">
+                          <Label htmlFor="auth_amount" className="text-sm font-medium text-gray-700">
+                            Estimated Amount for procedure *
+                          </Label>
+                          <Input
+                            id="auth_amount"
+                            type="number"
+                            placeholder="Estimated Amount for procedure"
+                            value={selectedPendingRequest?.auth_amount || ""}
+                            onChange={(e) => {
+                              if (selectedPendingRequest) {
+                                setSelectedPendingRequest({
+                                  ...selectedPendingRequest,
+                                  auth_amount: Number(e.target.value),
+                                });
+                              }
+                            }}
+                            className="border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+                            required
+                            min={0}
+                          />
+                        </div>
+                    
                         <div className="flex space-x-3">
                           <Button
                             onClick={() => handleApprovePendingRequest(request.request_id)}

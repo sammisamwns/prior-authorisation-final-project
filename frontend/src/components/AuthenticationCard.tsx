@@ -40,7 +40,7 @@ const AuthenticationCard = ({ onAuthenticated }: AuthenticationCardProps) => {
         headers: {
           "Content-Type": "application/json",
         },
-  body: JSON.stringify({
+        body: JSON.stringify({
           email: email,
           password: password,
           user_type: userType,
@@ -53,7 +53,7 @@ const AuthenticationCard = ({ onAuthenticated }: AuthenticationCardProps) => {
         localStorage.setItem("authToken", data.token);
         localStorage.setItem("userEmail", email);
         localStorage.setItem("userName", data.user.name);
-        localStorage.setItem("userType", userType);
+        localStorage.setItem("priorAuths", JSON.stringify(data.user.prior_auths || []));
 
         toast({
           title: "Login Successful",

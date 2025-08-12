@@ -194,7 +194,7 @@ const MemberPortal = () => {
       }
 
       // Fetch member profile
-  const profileResponse = await fetch(`${API_BASE_URL}/member/profile`, {
+      const profileResponse = await fetch(`${API_BASE_URL}/member/profile`, {
         method: "GET",
         headers: {
           "Authorization": `Bearer ${token}`,
@@ -213,8 +213,8 @@ const MemberPortal = () => {
         });
       }
 
-      // Fetch member claims
-  const claimsResponse = await fetch(`${API_BASE_URL}/member/claims`, {
+      // Fetch member prior auths
+      const priorAuthResponse = await fetch(`${API_BASE_URL}/prior-auth`, { // Updated to fetch from prior_auth
         method: "GET",
         headers: {
           "Authorization": `Bearer ${token}`,
@@ -222,9 +222,9 @@ const MemberPortal = () => {
         },
       });
 
-      if (claimsResponse.ok) {
-        const claimsData = await claimsResponse.json();
-        setClaims(claimsData.data);
+      if (priorAuthResponse.ok) {
+        const priorAuthData = await priorAuthResponse.json();
+        setClaims(priorAuthData.prior_auths || []);
       }
 
     } catch (error) {
@@ -244,7 +244,7 @@ const MemberPortal = () => {
       if (!token) return;
 
       setIsLoadingPlans(true);
-  const response = await fetch(`${API_BASE_URL}/payers/insurance-plans`, {
+      const response = await fetch(`${API_BASE_URL}/payers/insurance-plans`, {
         method: "GET",
         headers: {
           "Authorization": `Bearer ${token}`,
@@ -268,7 +268,7 @@ const MemberPortal = () => {
       const token = localStorage.getItem("authToken");
       if (!token) return;
 
-  const response = await fetch(`${API_BASE_URL}/member/insurance-subscriptions`, {
+      const response = await fetch(`${API_BASE_URL}/member/insurance-subscriptions`, {
         method: "GET",
         headers: {
           "Authorization": `Bearer ${token}`,
@@ -290,7 +290,7 @@ const MemberPortal = () => {
       const token = localStorage.getItem("authToken");
       if (!token) return;
 
-  const response = await fetch(`${API_BASE_URL}/member/subscribe-insurance`, {
+      const response = await fetch(`${API_BASE_URL}/member/subscribe-insurance`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${token}`,
@@ -338,7 +338,7 @@ const MemberPortal = () => {
 
     try {
       const token = localStorage.getItem("authToken");
-  const response = await fetch(`${API_BASE_URL}/prior-auth`, {
+      const response = await fetch(`${API_BASE_URL}/prior-auth`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${token}`,
@@ -392,7 +392,7 @@ const MemberPortal = () => {
   const fetchPendingRequests = async () => {
     try {
       const token = localStorage.getItem("authToken");
-      const response = await fetch("API_BASmember/pending-requests", {
+      const response = await fetch(`${API_BASE_URL}/pending-requests`, { // Updated to fetch from pending_requests
         headers: {
           "Authorization": `Bearer ${token}`,
           "Content-Type": "application/json",
@@ -401,7 +401,7 @@ const MemberPortal = () => {
 
       if (response.ok) {
         const data = await response.json();
-        setPendingRequests(data.data || []);
+        setPendingRequests(data.pending_requests || []);
       }
     } catch (error) {
       console.error('Error fetching pending requests:', error);
@@ -417,7 +417,7 @@ const MemberPortal = () => {
     try {
       setIsSearchingProviders(true);
       const token = localStorage.getItem("authToken");
-  const response = await fetch(`${API_BASE_URL}/provider/search?q=${encodeURIComponent(query)}`, {
+      const response = await fetch(`${API_BASE_URL}/provider/search?q=${encodeURIComponent(query)}`, {
         headers: {
           "Authorization": `Bearer ${token}`,
           "Content-Type": "application/json",
@@ -449,7 +449,7 @@ const MemberPortal = () => {
 
     try {
       const token = localStorage.getItem("authToken");
-  const response = await fetch(`${API_BASE_URL}/member/submit-pending-request`, {
+      const response = await fetch(`${API_BASE_URL}/member/submit_pending_request`, { // Updated endpoint
         method: "POST",
         headers: {
           "Authorization": `Bearer ${token}`,
@@ -499,7 +499,7 @@ const MemberPortal = () => {
   const handleFormatDescription = async (rawInput: string) => {
     try {
       const token = localStorage.getItem("authToken");
-  const response = await fetch(`${API_BASE_URL}/ai/format-description`, {
+      const response = await fetch(`${API_BASE_URL}/ai/format-description`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${token}`,
@@ -546,7 +546,7 @@ const MemberPortal = () => {
     setIsAiLoading(true);
     try {
       const token = localStorage.getItem("authToken");
-  const response = await fetch(`${API_BASE_URL}/ai/health-buddy`, {
+      const response = await fetch(`${API_BASE_URL}/ai/health-buddy`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${token}`,
@@ -601,7 +601,7 @@ const MemberPortal = () => {
   const fetchPreviousClaims = async () => {
     try {
       const token = localStorage.getItem("authToken");
-      const response = await fetch(`${API_BASE_URL}/member/claims`, {
+      const response = await fetch(`${API_BASE_URL}/prior-auth`, {
         headers: {
           "Authorization": `Bearer ${token}`,
           "Content-Type": "application/json",
@@ -610,10 +610,10 @@ const MemberPortal = () => {
 
       if (response.ok) {
         const data = await response.json();
-        setPreviousClaims(data.data || []);
+        setPreviousClaims(data.prior_auths || []);
       }
     } catch (error) {
-      console.error("Error fetching previous claims:", error);
+      console.error("Error fetching previous prior auths:", error);
     }
   };
 
@@ -637,15 +637,7 @@ const MemberPortal = () => {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Member Dashboard</h1>
         <div className="flex space-x-2">
-          <Button
-            onClick={() => navigate('/ai-status')}
-            variant="outline"
-            size="sm"
-            className="flex items-center space-x-2"
-          >
-            <Bot className="w-4 h-4" />
-            <span>AI Status</span>
-          </Button>
+          
           <Button
             onClick={() => navigate('/profile/member')}
             variant="outline"
@@ -691,7 +683,7 @@ const MemberPortal = () => {
           }`}
         >
           <FileText className="w-4 h-4" />
-          <span>My Subscriptions</span>
+          <span>Subscriptions</span>
         </button>
         <button
           onClick={() => setActiveTab("pending-requests")}
@@ -1242,6 +1234,7 @@ const MemberPortal = () => {
                       setPendingRequest({...pendingRequest, provider_info: e.target.value});
                       searchProviders(e.target.value);
                     }}
+                    
                     className="border-gray-200 focus:border-blue-500 focus:ring-blue-500"
                   />
                   {isSearchingProviders && (
@@ -1255,7 +1248,10 @@ const MemberPortal = () => {
                         <button
                           key={provider.provider_id}
                           type="button"
-                          onClick={() => setPendingRequest({...pendingRequest, provider_info: provider.provider_id})}
+                          onClick={() => {
+                            setPendingRequest({...pendingRequest, provider_info: provider.provider_id});
+                            setProviders([]);
+                          }}
                           className="w-full text-left px-4 py-2 hover:bg-gray-100 border-b border-gray-100 last:border-b-0"
                         >
                           <div className="font-medium text-gray-900">{provider.name}</div>
@@ -1284,20 +1280,6 @@ const MemberPortal = () => {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="pending_notes" className="text-sm font-medium text-gray-700">
-                Additional Notes
-              </Label>
-              <Textarea
-                id="pending_notes"
-                placeholder="Any additional information about your request..."
-                value={pendingRequest.additional_notes}
-                onChange={(e) => setPendingRequest({...pendingRequest, additional_notes: e.target.value})}
-                rows={3}
-                className="border-gray-200 focus:border-blue-500 focus:ring-blue-500"
-              />
-            </div>
-
-            <div className="space-y-2">
               <Label htmlFor="member_notes" className="text-sm font-medium text-gray-700">
                 Notes for Provider
               </Label>
@@ -1310,7 +1292,19 @@ const MemberPortal = () => {
                 className="border-gray-200 focus:border-blue-500 focus:ring-blue-500"
               />
             </div>
-
+            <div className="space-y-2">
+              <Label htmlFor="pending_notes" className="text-sm font-medium text-gray-700">
+                Additional Notes
+              </Label>
+              <Textarea
+                id="pending_notes"
+                placeholder="Any additional information about your request..."
+                value={pendingRequest.additional_notes}
+                onChange={(e) => setPendingRequest({...pendingRequest, additional_notes: e.target.value})}
+                rows={3}
+                className="border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+              />
+            </div>
             <Button
               onClick={handleSubmitPendingRequest}
               disabled={isSubmittingPending}
@@ -1512,7 +1506,7 @@ const MemberPortal = () => {
               <div>
                 <CardTitle>Previous Claims</CardTitle>
                 <CardDescription>
-                  View the history of all your submitted claims along with their status and creation date.
+                  View the history of all your submitted prior auth requests along with their status and creation date.
                 </CardDescription>
               </div>
             </div>
@@ -1520,29 +1514,29 @@ const MemberPortal = () => {
           <CardContent>
             {previousClaims.length > 0 ? (
               <div className="space-y-4">
-                {previousClaims.map((claim) => (
-                  <Card key={claim.claim_id} className="border-l-4 border-gray-500">
+                {previousClaims.map((auth) => (
+                  <Card key={auth.claim_id} className="border-l-4 border-gray-500">
                     <CardContent className="p-4">
                       <div className="flex justify-between items-start">
                         <div>
-                          <h4 className="font-semibold text-gray-900">{claim.medication_type}</h4>
-                          <p className="text-sm text-gray-600">Claim ID: {claim.claim_id}</p>
-                          <p className="text-sm text-gray-500">Status: {formatStatus(claim.status)}</p>
+                          <h4 className="font-semibold text-gray-900">{auth.medication_type}</h4>
+                          <p className="text-sm text-gray-600">Auth ID: {auth.claim_id}</p>
+                          <p className="text-sm text-gray-500">Status: {formatStatus(auth.status)}</p>
                           <p className="text-sm text-gray-500">
-                            Created At: {claim.submitted_at && claim.submitted_at.$date ? new Date(claim.submitted_at.$date).toLocaleString() : "Invalid Date"}
+                            Created At: {auth.submitted_at && auth.submitted_at.$date ? new Date(auth.submitted_at.$date).toLocaleString() : "Invalid Date"}
                           </p>
                         </div>
                         <Badge
                           variant="secondary"
                           className={`${
-                            claim.status === "approved"
+                            auth.status === "approved"
                               ? "bg-green-100 text-green-800"
-                              : claim.status === "rejected"
+                              : auth.status === "rejected"
                               ? "bg-red-100 text-red-800"
                               : "bg-yellow-100 text-yellow-800"
                           }`}
                         >
-                          {formatStatus(claim.status)}
+                          {formatStatus(auth.status)}
                         </Badge>
                       </div>
                     </CardContent>
@@ -1552,8 +1546,8 @@ const MemberPortal = () => {
             ) : (
               <div className="text-center py-8">
                 <History className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No Previous Claims</h3>
-                <p className="text-gray-600">You haven't submitted any claims yet.</p>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No Previous Prior Auths</h3>
+                <p className="text-gray-600">You haven't submitted any prior auth requests yet.</p>
               </div>
             )}
           </CardContent>

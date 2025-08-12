@@ -38,7 +38,9 @@ from openai import AzureOpenAI
 # Load environment variables
 load_dotenv()
 
-# Azure OpenAI Configuration
+
+# Azure OpenAI Configuration working perfectly with firewall error
+
 AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
 AZURE_OPENAI_ENDPOINT = "https://wns-openai-genai-poc-eus-04.openai.azure.com/"
 AZURE_OPENAI_DEPLOYMENT = "gpt-4o"
@@ -50,6 +52,7 @@ client = AzureOpenAI(
     api_version="2024-02-01",
     azure_endpoint=AZURE_OPENAI_ENDPOINT
 )
+
 
 # Initialize Flask app and extensions
 app = Flask(__name__)
@@ -67,8 +70,7 @@ mongo = PyMongo(app)
 db = mongo.db
 members = db.members
 providers = db.providers
-claims = db.claims
-prior_auths = db.prior_auths
+prior_auth = db.prior_auth  # Replacing claims with prior_auth
 payers = db.payers
 insurance_subscriptions = db.insurance_subscriptions  # New collection for insurance subscriptions
 pending_requests = db.pending_requests  # New collection for pending member requests
@@ -149,7 +151,7 @@ Member Profile:
 ID: {member_data.get('member_id')}
 Age: {member_data.get('age')}
 Gender: {member_data.get('gender')}
-Chronic Conditions: {member_data.get('conditions', [])}
+Chronic Conditions: {member_data.get('diseases', [])}
 
 Historical Requests:
 {past_requests if past_requests else "No past requests found"}
@@ -166,6 +168,7 @@ Follow these steps:
 6. Provide reason and extra notes.
 Respond ONLY in JSON with keys: status, reason, ai_notes.
         """
+
 
         # Call Azure OpenAI Chat Completions API
         response = client.chat.completions.create(
@@ -241,7 +244,7 @@ Member Profile:
 - ID: {member_data.get('member_id')}
 - Age: {member_data.get('age')}
 - Gender: {member_data.get('gender')}
-- Chronic Conditions: {member_data.get('conditions', [])}
+- Chronic Conditions: {member_data.get('diseases', [])}
 
 Historical Requests:
 {past_requests if past_requests else "No past requests found"}
@@ -335,50 +338,117 @@ def get_autocomplete_suggestion(input_text):
     """
     Get autocomplete suggestions using Azure OpenAI with an agentic reasoning approach.
     """
+
     try:
+
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are an intelligent autocomplete assistant. Predict and suggest the most likely text completion. "
+                    "Remember there is context from previous messages. "
+                    "Also, the member will be a patient seeking to make a claim for the insurance payer "
+                    "to get reimbursed for the amount they are going to spend on the treatment of the disease "
+                    "or the diagnosis that they need to do preliminary check-ups. "
+                    "Help that member to get the correct sentence using autocomplete."
+                )
+            },
+            {
+                "role": "user",
+                "content": input_text
+            }
+        ]
         response = client.chat.completions.create(
             model=AZURE_OPENAI_DEPLOYMENT,
+            messages=messages,
             reasoning={"effort": "medium"},
-            input=[
-                {
-                    "role": "system",
-                    "content": "You are an intelligent autocomplete assistant. Predict and suggest the most likely text completion."
-                },
-                {
-                    "role": "user",
-                    "content": input_text
-                }
-            ],
             max_output_tokens=50
         )
+
         return response.output_text.strip()
     except Exception as e:
         print(f"Error getting autocomplete: {str(e)}")
         return ""
 
-def get_ai_health_buddy_response(user_message, member_data, past_requests):
+def get_ai_health_buddy_response(user_message, member_doc, provider_data, payer_data, past_requests, member_provider, member_payer):
     """
     Get AI health buddy response for member queries using Azure OpenAI (agentic style).
     """
     try:
         # Build context for the AI
         prompt = f"""
-You are a helpful AI health buddy for a member. Based on their profile and history, provide helpful advice.
+    You are a helpful AI health buddy for a member. Your role is to:
 
-Member Profile:
-- Age: {member_data.get('age', 'Unknown')}
-- Gender: {member_data.get('gender', 'Unknown')}
-- Conditions: {', '.join(member_data.get('conditions', []))}
-- Past Requests: {past_requests if past_requests else 'None'}
+    1. Understand the member's current health concern and background.
+    2. Match them with the most suitable healthcare provider from the given provider list.
+    3. Recommend the most relevant insurance plan from the given insurance payer details.
+    4. Provide advice in a clear, empathetic, and professional tone.
 
-User Question: {user_message}
+    Member Profile:
+    - Name: {member_doc.get('name', 'Unknown')}
+    - Age: {member_doc.get('age', 'Unknown')}
+    - Gender: {member_doc.get('gender', 'Unknown')}
+    - Existing Conditions: {', '.join(member_doc.get('diseases', []))}
+    - Insurance Plan: {member_doc.get('insurance_plan', 'Unknown')}
+    - Deductible: {member_doc.get('deductible', 'Unknown')}
+    - Co-pay: {member_doc.get('co_pay', 'Unknown')}
+    - Coverage Start: {member_doc.get('coverage_start', 'Unknown')}
+    - Emergency Contact: {member_doc.get('emergency_contact', 'Unknown')} ({member_doc.get('emergency_phone', 'Unknown')})
+    - Past Claims History: {past_requests if past_requests else 'None'}
 
-Rules:
-- Do not give a direct diagnosis.
-- Suggest safe, general next steps.
-- Recommend seeing a medical professional when necessary.
-- Provide information in a clear, concise, and empathetic tone.
-"""
+    Healthcare Providers:
+    {json.dumps(provider_data, indent=2)}
+
+    Insurance Payers:
+    {json.dumps(payer_data, indent=2)}
+
+    Member's go-to Provider:
+    {json.dumps(member_provider, indent=2)}
+
+    Member's already subscribed Insurance Payer:
+    {json.dumps(member_payer, indent=2)}
+
+    User's Current Question/Issue:
+    {user_message}
+
+    Rules & Guidelines:
+    - Do NOT provide a direct medical diagnosis.
+    - Analyze the patient's current issue and their profile.
+    - Recommend the BEST provider considering:
+        * Specialization (match expertise to condition)
+        * Years of Experience
+        * Board Certification
+        * Network Type (in-network providers preferred)
+        * Languages spoken (if relevant)
+    - Recommend the BEST insurance plan based on:
+        * Coverage Details
+        * Deductible Amount
+        * Co-pay Amount
+        * Maximum Out-of-Pocket Limit
+        * Approval Rate
+        * Coverage Types matching patient's needs
+    - Explain clearly WHY the chosen provider and insurance plan are suitable.
+    - If no perfect match, suggest closest alternatives and limitations.
+    - Always encourage consulting a licensed medical professional for final advice.
+    - Provide output in the following format:
+
+    Output Format:
+    1. Summary of the patient's situation.
+    2. Recommended Provider:
+    - Name
+    - Specialization / Expertise
+    - Years of Experience
+    - Board Certified (Yes/No)
+    - Reason for Choice
+    3. Recommended Insurance Plan:
+    - Name
+    - Coverage Highlights
+    - Deductible
+    - Co-pay
+    - Max Out-of-Pocket Limit
+    - Reason for Choice
+    4. Next Steps for the patient.
+    """
 
         # Call Azure OpenAI Chat Completion
         response = client.chat.completions.create(
@@ -632,17 +702,7 @@ def get_member_insurance_plans_by_id(current_user, member_id):
 
 @app.route('/register', methods=['POST'])
 def register():
-    """
-    Register new members and providers.
     
-    Expected JSON payload:
-    {
-        "email": "user@example.com",
-        "password": "securepassword",
-        "name": "John Doe",
-        "user_type": "member" | "provider"
-    }
-    """
     data = request.get_json()
     email = data.get('email')
     password = data.get('password')
@@ -1060,11 +1120,11 @@ def get_member_claims(current_user):
             return jsonify({'message': 'Member not found'}), 404
             
         # Get all claims for this member
-        member_claims = list(db.claims.find({'member_id': member['member_id']}))
+        member_claims = list(db.prior_auth.find({'member_id': member['member_id']}))
         
         # Convert ObjectId to string for JSON serialization
         for claim in member_claims:
-            claim['_id'] = str(claim['_id'])
+            prior_auth['_id'] = str(prior_auth['_id'])
             
         return jsonify({'data': member_claims}), 200
         
@@ -1094,7 +1154,7 @@ def get_member_insurance_plans(current_user):
         insurance_plans = []
         for payer in payers:
             # Get member's claims under this payer
-            member_claims = list(db.claims.find({
+            member_claims = list(db.prior_auth.find({
                 'member_id': member_id,
                 'payer_id': payer['_id']
             }))
@@ -1226,331 +1286,71 @@ def get_all_prior_auths(current_user):
         return jsonify({'message': f'Error fetching requests: {str(e)}'}), 500
 
 @app.route('/prior-auth/decision', methods=['POST'])
-@token_required
-def approve_reject_auth(current_user):
+def handle_prior_auth_decision():
     """
-    Approve or reject a prior authorization request.
-    Used by PayerPortal and PriorAuthAIStatus components.
+    Approve or reject a pending request and move it to the prior_auth database.
     """
+    data = request.json
+    request_id = data.get('request_id')
+    decision = data.get('decision')  # 'approved' or 'rejected'
+    notes = data.get('notes', '')
+
+    if not request_id or decision not in ['approved', 'rejected']:
+        return jsonify({"message": "Invalid request data"}), 400
+
     try:
-        # Allow payers and admins to make decisions
-        if current_user['user_type'] not in ['payer', 'admin']:
-            return jsonify({'message': 'Unauthorized'}), 403
+        # Fetch the pending request from the pending_requests database
+        pending_request = mongo.db.pending_requests.find_one({"_id": ObjectId(request_id)})
 
-        data = request.get_json()
-        auth_id = data.get('auth_id')
-        decision = data.get('decision')  # 'approved' or 'denied'
-        notes = data.get('notes', '')
+        if not pending_request:
+            return jsonify({"message": "Pending request not found"}), 404
 
-        if decision not in ['approved', 'denied']:
-            return jsonify({'message': 'Invalid decision'}), 400
+        # Add decision details to the request
+        pending_request['status'] = decision
+        pending_request['decision_notes'] = notes
+        pending_request['decision_date'] = dtt.now(timezone.utc)
 
-        # Update the authorization request
-        result = db.prior_auths.update_one(
-            {'auth_id': auth_id},
-            {
-                '$set': {
-                    'status': decision, 
-                    'review_notes': notes,
-                    'reviewed_at': dtt.now(timezone.utc),
-                    'reviewed_by': current_user['email']
-                }
-            }
-        )
+        # Move the request to the prior_auth database
+        mongo.db.prior_auth.insert_one(pending_request)
 
-        if result.modified_count == 0:
-            return jsonify({'message': 'Authorization ID not found'}), 404
+        # Remove the request from the pending_requests database
+        mongo.db.pending_requests.delete_one({"_id": ObjectId(request_id)})
 
-        return jsonify({'message': f'Authorization {decision}'}), 200
+        return jsonify({"message": f"Request {decision} successfully"}), 200
 
     except Exception as e:
-        return jsonify({'message': f'Error processing decision: {str(e)}'}), 500
+        print(f"Error handling prior auth decision: {e}")
+        return jsonify({"message": "Internal server error"}), 500
+
 
 @app.route('/prior-auth', methods=['GET'])
-@token_required
-def get_user_prior_auths(current_user):
+def fetch_prior_auths():
     """
-    Get prior authorization requests for the current user.
-    Used by MemberPortal and ProviderPortal components.
+    Fetch all prior authorization records from the prior_auth database.
     """
     try:
-        email = current_user['email']
-        user_type = current_user['user_type']
-        
-        if user_type == 'member':
-            member = db.members.find_one({'email': email})
-            if not member:
-                return jsonify({'message': 'Member not found'}), 404
-            # Get auths for this member
-            results = list(db.prior_auths.find({'member_id': member['member_id']}))
-            
-        elif user_type == 'provider':
-            provider = db.providers.find_one({'email': email})
-            if not provider:
-                return jsonify({'message': 'Provider not found'}), 404
-            # Get auths for this provider
-            results = list(db.prior_auths.find({'provider_id': provider['provider_id']}))
-            
-        else:
-            return jsonify({'message': 'User type not recognized'}), 403
-
-        # Convert ObjectId to string and format dates
-        for r in results:
-            r['_id'] = str(r['_id'])
-            if 'submitted_at' in r:
-                r['submitted_at'] = r['submitted_at'].isoformat()
-            if 'ai_reviewed_at' in r:
-                r['ai_reviewed_at'] = r['ai_reviewed_at'].isoformat()
-
-        return jsonify({'prior_auths': results}), 200
-
+        prior_auths = list(mongo.db.prior_auth.find())
+        for auth in prior_auths:
+            auth['_id'] = str(auth['_id'])  # Convert ObjectId to string for JSON serialization
+        return jsonify({"prior_auths": prior_auths}), 200
     except Exception as e:
-        return jsonify({'message': f'Error fetching prior auths: {str(e)}'}), 500
+        print(f"Error fetching prior auths: {e}")
+        return jsonify({"message": "Internal server error"}), 500
 
-# =====================================================
-# Payer-Specific Endpoints
-# =====================================================
 
-@app.route('/payer/dashboard', methods=['GET'])
-@token_required
-def payer_dashboard(current_user):
+@app.route('/pending-requests', methods=['GET'])
+def fetch_pending_requests():
     """
-    Get payer dashboard data.
-    Used by PayerPortal component.
+    Fetch all pending requests from the pending_requests database.
     """
     try:
-        if current_user['user_type'] != 'payer':
-            return jsonify({'message': 'Unauthorized'}), 403
-
-        payer = db.payers.find_one({'email': current_user['email']})
-        if not payer:
-            return jsonify({'message': 'Payer not found'}), 404
-
-        # Include coverage_category in the response
-        payer['coverage_category'] = payer.get('coverage_category', [])
-        # Remove sensitive data
-        payer.pop('password', None)
-        
-        return jsonify(payer), 200
-
+        pending_requests = list(mongo.db.pending_requests.find())
+        for request in pending_requests:
+            request['_id'] = str(request['_id'])  # Convert ObjectId to string for JSON serialization
+        return jsonify({"pending_requests": pending_requests}), 200
     except Exception as e:
-        return jsonify({'message': f'Error fetching payer dashboard: {str(e)}'}), 500
-
-@app.route('/payer/requests', methods=['GET'])
-@token_required
-def get_payer_requests(current_user):
-    """
-    Get all authorization requests for payer review.
-    Used by PayerPortal component.
-    """
-    try:
-        if current_user['user_type'] != 'payer':
-            return jsonify({'message': 'Unauthorized'}), 403
-
-        # Get all pending and recent authorization requests
-        auth_requests = list(db.prior_auths.find({
-            'status': {'$in': ['pending', 'approved', 'denied']}
-        }).sort('submitted_at', -1))
-
-        # Format the data for frontend
-        formatted_requests = []
-        for req in auth_requests:
-            # Get member and provider details
-            member = db.members.find_one({'member_id': req['member_id']})
-            provider = db.providers.find_one({'provider_id': req['provider_id']})
-            
-            formatted_requests.append({
-                'id': req['auth_id'],
-                'member_name': member['name'] if member else 'Unknown',
-                'provider_name': provider['name'] if provider else 'Unknown',
-                'service': req['procedure'],
-                'status': req['status'],
-                'submitted_date': req['submitted_at'].strftime('%Y-%m-%d'),
-                'priority': 'high' if req.get('urgency') == 'emergency' else 'medium'
-            })
-
-        return jsonify({'requests': formatted_requests}), 200
-
-    except Exception as e:
-        return jsonify({'message': f'Error fetching requests: {str(e)}'}), 500
-
-@app.route('/payer/subscriptions', methods=['GET'])
-@token_required
-def get_payer_subscriptions(current_user):
-    """Get all insurance subscriptions for a payer"""
-    try:
-        if current_user['user_type'] != 'payer':
-            return jsonify({'message': 'Unauthorized'}), 403
-            
-        # Get payer details
-        payer = db.payers.find_one({'email': current_user['email']})
-        if not payer:
-            return jsonify({'message': 'Payer not found'}), 404
-            
-        # Get all subscriptions for this payer
-        subscriptions = list(db.insurance_subscriptions.find({'payer_id': payer['payer_id']}))
-        
-        # Convert ObjectId to string and format dates
-        for sub in subscriptions:
-            sub['_id'] = str(sub['_id'])
-            if 'subscription_date' in sub:
-                sub['subscription_date'] = sub['subscription_date'].strftime('%Y-%m-%d')
-        
-        return jsonify({
-            'success': True,
-            'subscriptions': subscriptions
-        }), 200
-        
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'Error fetching subscriptions: {str(e)}'
-        }), 500
-
-@app.route('/payer/update-auth', methods=['POST'])
-@token_required
-def update_prior_auth(current_user):
-    """
-    Update prior authorization status (approve/reject).
-    Used by PayerPortal component.
-    """
-    try:
-        if current_user['user_type'] != 'payer':
-            return jsonify({'message': 'Unauthorized'}), 403
-
-        data = request.get_json()
-        auth_id = data.get('auth_id')
-        action = data.get('action')  # 'approve' or 'reject'
-        payout_amount = data.get('amount', 0)
-
-        # Find the authorization request
-        auth = db.prior_auths.find_one({'auth_id': auth_id})
-        if not auth:
-            return jsonify({'message': 'Auth request not found'}), 404
-
-        # Find the payer
-        payer = db.payers.find_one({'email': current_user['email']})
-        if not payer:
-            return jsonify({'message': 'Payer not found'}), 404
-
-        if action == 'approve':
-            # Check if payer has sufficient balance
-            if payout_amount > payer['balance_left']:
-                return jsonify({'message': 'Insufficient balance'}), 400
-
-            # Update authorization status
-            db.prior_auths.update_one(
-            {'auth_id': auth_id},
-                {'$set': {'status': 'approved'}}
-            )
-            
-            # Update payer balance and records
-            db.payers.update_one(
-                {'email': current_user['email']}, 
-                {
-                    '$inc': {
-                        'balance_left': -payout_amount,
-                        'total_amount_paid': payout_amount
-                    },
-                    '$push': {'approved_cases': auth_id},
-                    '$pull': {'pending_cases': auth_id}
-                }
-            )
-
-        elif action == 'reject':
-            # Update authorization status
-            db.prior_auths.update_one(
-                {'auth_id': auth_id}, 
-                {'$set': {'status': 'rejected'}}
-            )
-            
-            # Remove from pending cases
-            db.payers.update_one(
-                {'email': current_user['email']}, 
-                {'$pull': {'pending_cases': auth_id}}
-            )
-        else:
-            return jsonify({'message': 'Invalid action'}), 400
-
-        return jsonify({'message': f'Claim {action}ed successfully'}), 200
-
-    except Exception as e:
-        return jsonify({'message': f'Error updating authorization: {str(e)}'}), 500
-
-# =====================================================
-# AI Status and Analytics Endpoints
-# =====================================================
-
-@app.route('/ai-status', methods=['GET'])
-@token_required
-def get_ai_status(current_user):
-    """
-    Get AI processing status and analytics.
-    Used by PriorAuthAIStatus component.
-    """
-    try:
-        # Get all authorization requests with AI processing info
-        auth_requests = list(db.prior_auths.find({}).sort('submitted_at', -1))
-
-        formatted_requests = []
-        for req in auth_requests:
-            # Get member and provider details
-            member = db.members.find_one({'member_id': req['member_id']})
-            provider = db.providers.find_one({'provider_id': req['provider_id']})
-            
-            formatted_requests.append({
-                'auth_id': req['auth_id'],
-                'member_name': member['name'] if member else 'Unknown',
-                'provider_name': provider['name'] if provider else 'Unknown',
-                'procedure': req['procedure'],
-                'status': req['status'],
-                'submitted_date': req['submitted_at'].strftime('%Y-%m-%d'),
-                'priority': 'high' if req.get('urgency') == 'emergency' else 'medium',
-                'ai_decision': req.get('ai_decision'),
-                'notes': req.get('review_notes', req.get('ai_notes', ''))
-            })
-
-        return jsonify({'prior_auths': formatted_requests}), 200
-        
-    except Exception as e:
-        return jsonify({'message': f'Error fetching AI status: {str(e)}'}), 500
-
-@app.route('/analytics', methods=['GET'])
-@token_required
-def get_analytics(current_user):
-    """
-    Get system analytics and performance metrics.
-    Used by various dashboard components.
-    """
-    try:
-        # Calculate various metrics
-        total_requests = db.prior_auths.count_documents({})
-        approved_requests = db.prior_auths.count_documents({'status': 'approved'})
-        pending_requests = db.prior_auths.count_documents({'status': 'pending'})
-        denied_requests = db.prior_auths.count_documents({'status': 'denied'})
-        
-        # Calculate approval rate
-        approval_rate = (approved_requests / total_requests * 100) if total_requests > 0 else 0
-        
-        # Get recent activity
-        recent_requests = list(db.prior_auths.find({}).sort('submitted_at', -1).limit(10))
-        
-        analytics_data = {
-            'total_requests': total_requests,
-            'approved_requests': approved_requests,
-            'pending_requests': pending_requests,
-            'denied_requests': denied_requests,
-            'approval_rate': round(approval_rate, 2),
-            'average_processing_time': '2.3 days',  # Mock data
-            'cost_savings': '$2.4M',  # Mock data
-            'recent_activity': recent_requests
-        }
-        
-        return jsonify(analytics_data), 200
-
-    except Exception as e:
-        return jsonify({'message': f'Error fetching analytics: {str(e)}'}), 500
-
+        print(f"Error fetching pending requests: {e}")
+        return jsonify({"message": "Internal server error"}), 500
 # =====================================================
 # AI-Powered Endpoints
 # =====================================================
@@ -1631,7 +1431,7 @@ def get_autocomplete(current_user):
         
         return jsonify({
             'suggestion': suggestion
-        }), 200
+        }, 200)
         
     except Exception as e:
         return jsonify({'message': f'Error getting autocomplete: {str(e)}'}), 500
@@ -1656,10 +1456,19 @@ def health_buddy_chat(current_user):
             
         # Get past requests
         past_requests = list(db.prior_auths.find({'member_id': member['member_id']}))
-        
+
+        # Get provider data
+        provider_data = db.providers.find()
+        # Get payer data
+        payer_data = db.payers.find_one()
+
+        member_payer = db.payers.find_one({'payer_id': member['payer_id']})
+
+        member_provider = db.providers.find_one({'provider_id': member['provider_id']})
+
         # Get AI response
-        ai_response = get_ai_health_buddy_response(user_message, member, past_requests)
-        
+        ai_response = get_ai_health_buddy_response(user_message, member, provider_data, payer_data, past_requests, member_provider, member_payer)
+
         return jsonify({
             'response': ai_response
         }), 200
@@ -1671,7 +1480,7 @@ def health_buddy_chat(current_user):
 # Member-Provider Interaction Endpoints
 # =====================================================
 
-@app.route('/member/submit-pending-request', methods=['POST'])
+@app.route('/member/submit_pending_request', methods=['POST'])
 @token_required
 def submit_pending_request(current_user):
     """
@@ -1697,6 +1506,7 @@ def submit_pending_request(current_user):
                 {'email': {'$regex': provider_info, '$options': 'i'}}
             ]
         })
+        payer = db.payers.find_one({'payer_id': member['payer_id']})
         if not provider:
             return jsonify({'message': 'Provider not found'}), 404
 
@@ -1715,7 +1525,10 @@ def submit_pending_request(current_user):
             'additional_notes': data.get('additionalNotes', ''),
             'status': 'pending_provider_approval',
             'submitted_at': dtt.now(timezone.utc),
-            'member_notes': data.get('member_notes', '')
+            'member_notes': data.get('member_notes', ''),
+            'payer_id': payer['payer_id'],
+            'payer_name': payer['name'],
+            'payer_email': payer['email']
         }
 
         # Insert into pending requests collection
@@ -1729,7 +1542,7 @@ def submit_pending_request(current_user):
     except Exception as e:
         return jsonify({'message': f'Error submitting request: {str(e)}'}), 500
 
-@app.route('/provider/pending-requests', methods=['GET'])
+@app.route('/provider/pending_requests', methods=['GET'])
 @token_required
 def get_provider_pending_requests(current_user):
     """
@@ -1768,7 +1581,7 @@ def approve_pending_request(current_user):
         data = request.get_json()
         request_id = data.get('request_id')
         provider_notes = data.get('provider_notes', '')
-        
+        auth_amount = data.get('auth_amount', 0)
         if not request_id:
             return jsonify({'message': 'Request ID is required'}), 400
             
@@ -1801,7 +1614,8 @@ def approve_pending_request(current_user):
             'status': 'pending',
             'submitted_at': dtt.now(timezone.utc),
             'ai_processed': False,
-            'source': 'provider_approved'
+            'source': 'provider_approved',
+            'auth_amount': auth_amount
         }
         
         # Insert into prior_auths collection
@@ -1828,9 +1642,9 @@ def approve_pending_request(current_user):
     except Exception as e:
         return jsonify({'message': f'Error approving request: {str(e)}'}), 500
 
-@app.route('/member/pending-requests', methods=['GET'])
+@app.route('/member/pending-requests/', methods=['GET'])
 @token_required
-def get_member_pending_requests(current_user):
+def get_member_pending_requests(current_user, member_id):
     """
     Get pending requests for a member.
     """
@@ -1945,15 +1759,15 @@ def submit_claim(current_user):
             return jsonify({"message": "Insurance coverage exhausted"}), 400
         
         # Calculate claim amount (simplified - in real scenario this would be based on procedure)
-        claim_amount = random.randint(500, 3000)
+        auth_amount = random.randint(500, 3000)
         
         # Check if claim amount exceeds remaining balance
-        if claim_amount > subscription['remaining_balance']:
-            claim_amount = subscription['remaining_balance']
+        if auth_amount > subscription['remaining_balance']:
+            auth_amount = subscription['remaining_balance']
 
         # Create claim document
-        claim = {
-            "claim_id": f"C{random.randint(100000, 999999)}",
+        new_prior_auth = {
+            "auth_id": f"C{random.randint(100000, 999999)}",
             "member_id": data["member_id"],
             "member_name": member["name"],
             "provider_id": data["provider_id"],
@@ -1971,15 +1785,16 @@ def submit_claim(current_user):
         
 
         # Insert claim into database
-        inserted = db.claims.insert_one(claim)
-        
+        inserted = db.prior_auth.insert_one(new_prior_auth)
+        db.commit()
+
         # Update subscription with claim
         db.insurance_subscriptions.update_one(
             {'subscription_id': data['subscription_id']},
             {
-                '$push': {'claims_history': claim["claim_id"]},
-                '$inc': {'amount_reimbursed': claim_amount},
-                '$set': {'remaining_balance': subscription['remaining_balance'] - claim_amount}
+                '$push': {'claims_history': new_prior_auth["auth_id"]},
+                '$inc': {'amount_reimbursed': auth_amount},
+                '$set': {'remaining_balance': subscription['remaining_balance'] - auth_amount}
             }
         )
         
@@ -1987,13 +1802,13 @@ def submit_claim(current_user):
         db.members.update_one(
             {"member_id": data["member_id"]}, 
             {
-                "$push": {"claim_history": claim["claim_id"]},
-                "$inc": {"amount_reimbursed": claim_amount}
+                "$push": {"claim_history": new_prior_auth["auth_id"]},
+                "$inc": {"amount_reimbursed": auth_amount}
             }
         )
         db.providers.update_one(
             {"provider_id": data["provider_id"]}, 
-            {"$push": {"claim_history": claim["claim_id"]}}
+            {"$push": {"claim_history": new_prior_auth["auth_id"]}}
         )
         
         # Update payer's total reimbursed amount
@@ -2001,17 +1816,17 @@ def submit_claim(current_user):
             {'payer_id': subscription['payer_id']},
             {
                 '$inc': {
-                    'total_amount_paid': claim_amount,
-                    'payer_balance_left': -claim_amount
+                    'total_amount_paid': auth_amount,
+                    'payer_balance_left': -auth_amount
                 }
             }
         )
 
         return jsonify({
             "message": "Claim submitted successfully", 
-            "claim_id": claim["claim_id"],
-            "claim_amount": claim_amount,
-            "remaining_balance": subscription['remaining_balance'] - claim_amount
+            "auth_id": new_prior_auth["auth_id"],
+            "auth_amount": auth_amount,
+            "remaining_balance": subscription['remaining_balance'] - auth_amount
         }), 201
 
     except Exception as e:
@@ -2036,23 +1851,23 @@ def get_provider_claims(current_user, provider_id):
                 return jsonify({"message": "Unauthorized"}), 403
 
         # Get claims for the provider
-        claims = list(db.claims.find({"provider_id": provider_id}))
+        priorauths = list(db.prior_auth.find({"provider_id": provider_id}))
 
         results = []
-        for claim in claims:
+        for prior_auth in priorauths:
             # Get member details
-            member = db.members.find_one({"member_id": claim["member_id"]})
+            member = db.members.find_one({"member_id": prior_auth["member_id"]})
             
             results.append({
-                "claim_id": str(claim["_id"]),
-                "member_id": claim["member_id"],
+                "auth_id": str(prior_auth["_id"]),
+                "member_id": prior_auth["member_id"],
                 "member_name": member["name"] if member else "Unknown",
-                "procedure": claim["procedure"],
-                "diagnosis": claim["diagnosis"],
-                "urgency": claim["urgency"],
-                "status": claim.get("status", "pending"),
-                "submitted_at": claim.get("submitted_at").isoformat() if claim.get("submitted_at") else None,
-                "additional_notes": claim.get("additional_notes", "")
+                "procedure": prior_auth["procedure"],
+                "diagnosis": prior_auth["diagnosis"],
+                "urgency": prior_auth["urgency"],
+                "status": prior_auth.get("status", "pending"),
+                "submitted_at": prior_auth.get("submitted_at").isoformat() if prior_auth.get("submitted_at") else None,
+                "additional_notes": prior_auth.get("additional_notes", "")
             })
 
         return jsonify({"claims": results}), 200
@@ -2079,23 +1894,23 @@ def get_member_claims_by_id(current_user, member_id):
                 return jsonify({"message": "Unauthorized"}), 403
 
         # Get claims for the member
-        claims = list(db.claims.find({"member_id": member_id}))
+        claims = list(db.prior_auth.find({"member_id": member_id}))
 
         results = []
         for claim in claims:
             # Get provider details
-            provider = db.providers.find_one({"provider_id": claim["provider_id"]})
+            provider = db.providers.find_one({"provider_id": prior_auth["provider_id"]})
             
             # Ensure submitted_at is properly formatted
-            claim['submitted_at'] = claim.get('submitted_at').isoformat() if claim.get('submitted_at') else None
+            prior_auth['submitted_at'] = claim.get('submitted_at').isoformat() if claim.get('submitted_at') else None
             
             results.append({
-                "claim_id": str(claim["_id"]),
-                "provider_id": claim["provider_id"],
+                "auth_id": str(prior_auth["_id"]),
+                "provider_id": prior_auth["provider_id"],
                 "provider_name": provider["name"] if provider else "Unknown",
-                "procedure": claim["procedure"],
-                "diagnosis": claim["diagnosis"],
-                "urgency": claim["urgency"],
+                "procedure": prior_auth["procedure"],
+                "diagnosis": prior_auth["diagnosis"],
+                "urgency": prior_auth["urgency"],
                 "status": claim.get("status", "pending"),
                 "submitted_at": claim.get("submitted_at").isoformat() if claim.get("submitted_at") else None,
                 "amount_reimbursed": claim.get("amount_reimbursed", 0)
@@ -2106,9 +1921,9 @@ def get_member_claims_by_id(current_user, member_id):
     except Exception as e:
         return jsonify({"message": f"Error fetching member claims: {str(e)}"}), 500
 
-@app.route('/claims/<claim_id>/status', methods=['PUT'])
+@app.route('/claims/<auth_id>/status', methods=['PUT'])
 @token_required
-def update_claim_status(current_user, claim_id):
+def update_claim_status(current_user, auth_id):
     """
     Update claim status (approve/reject).
     Used by PayerPortal component.
@@ -2126,8 +1941,8 @@ def update_claim_status(current_user, claim_id):
             return jsonify({"message": "Invalid status"}), 400
 
         # Update claim status
-        result = db.claims.update_one(
-            {"_id": ObjectId(claim_id)},
+        result = db.prior_auth.update_one(
+            {"_id": ObjectId(auth_id)},
             {
                 "$set": {
                     "status": new_status,
@@ -2156,10 +1971,10 @@ def populate_sample_data():
     # Drop old collections
     db.members.drop()
     db.providers.drop()
-    db.claims.drop()
     db.payers.drop()
-    db.prior_auths.drop()
+    db.prior_auth.drop()
     db.insurance_subscriptions.drop()
+    db.pending_requests.drop()
 
     insurance_types = ["Medicare", "Medicaid", "Private"]
     roles = ["Doctor", "Nurse", "Technician", "Lab"]
@@ -2168,9 +1983,9 @@ def populate_sample_data():
 
     member_ids = []
     provider_ids = []
-    claim_ids = []
     payer_ids = []
     credentials_log = []
+    auth_ids = []
 
     # ---- Create Members ----
     for i in range(50):
@@ -2184,6 +1999,7 @@ def populate_sample_data():
             "email": email,
             "address": fake.address(),
             "phone": fake.phone_number(),
+            "age": random.randint(18, 80),
             "insurance_plan": random.choice(insurance_types),
             "claim_history": [],
             "diseases": [fake.word(), fake.word()],
@@ -2322,12 +2138,12 @@ def populate_sample_data():
                 }
             )
 
-    # ---- Create Claims ----
+    # ---- Create Prior Auth ----
     procedures = ["MRI Scan", "X-Ray", "Blood Test", "Physical Therapy", "Surgery", "Consultation", "Medication", "Emergency Visit"]
     
-    claim_statuses = ["pending_provider_approval", "under_review", "approved", "rejected"]  # Updated statuses
+    prior_auth_statuses = ["pending_provider_approval", "under_review", "approved", "rejected"]  # Updated statuses
     for i in range(300):
-        cid = f"C{i+1:03}"
+        auth_id = f"A{i+1:03}"
         member_obj_id = random.choice(member_ids)
         provider_obj_id = random.choice(provider_ids)
         payer_obj_id = random.choice(payer_ids)
@@ -2347,10 +2163,10 @@ def populate_sample_data():
             'status': 'active'
         })
         
-        claim_amount = random.randint(500, 3000)
+        auth_amount = random.randint(500, 3000)
 
-        claim_doc = {
-            "claim_id": cid,
+        prior_auth_doc = {
+            "auth_id": auth_id,
             "member_id": member_id_str,
             "member_name": member_doc['name'] if member_doc else "Unknown",
             "provider_id": provider_id_str,
@@ -2362,44 +2178,44 @@ def populate_sample_data():
             "diagnosis": fake.sentence(nb_words=4),
             "urgency": random.choice(["routine", "urgent", "emergency"]),
             "medication_type": random.choice(["Diagnosis", "Treatment", "Preventive"]),
-            "claim_amount": claim_amount,
-            "amount_reimbursed": claim_amount if random.choice([True, False]) else 0,
-            "status": random.choice(claim_statuses),
+            "auth_amount": auth_amount,
+            "amount_reimbursed": auth_amount if random.choice([True, False]) else 0,
+            "status": random.choice(prior_auth_statuses),
             "submitted_at": dtt.now(timezone.utc),  # Ensure UTC-aware timestamp
             "additional_notes": fake.sentence(),
             "remarks": fake.sentence()
         }
 
-        db.claims.insert_one(claim_doc)
-        claim_ids.append(cid)
+        db.prior_auth.insert_one(prior_auth_doc)
+        auth_ids.append(auth_id)
 
         # Update histories using ObjectIds
         db.members.update_one({'_id': member_obj_id}, {
-            '$push': {'claim_history': cid},
-            '$inc': {'amount_reimbursed': claim_doc['amount_reimbursed']}
+            '$push': {'auth_history': auth_id},
+            '$inc': {'amount_reimbursed': prior_auth_doc['amount_reimbursed']}
         })
-        db.providers.update_one({'_id': provider_obj_id}, {'$push': {'claim_history': cid}})
+        db.providers.update_one({'_id': provider_obj_id}, {'$push': {'auth_history': auth_id}})
         
         # Update subscription if exists
         if subscription:
             db.insurance_subscriptions.update_one(
                 {'subscription_id': subscription['subscription_id']},
                 {
-                    '$push': {'claims_history': cid},
-                    '$inc': {'amount_reimbursed': claim_doc['amount_reimbursed']},
-                    '$set': {'remaining_balance': max(0, subscription['remaining_balance'] - claim_doc['amount_reimbursed'])}
+                    '$push': {'auth_history': auth_id},
+                    '$inc': {'amount_reimbursed': prior_auth_doc['amount_reimbursed']},
+                    '$set': {'remaining_balance': max(0, subscription['remaining_balance'] - prior_auth_doc['amount_reimbursed'])}
                 }
             )
         
         # Update payer cases and amounts
-        if claim_doc['status'] == 'pending':
-            db.payers.update_one({'_id': payer_obj_id}, {'$push': {'pending_cases': cid}})
-        elif claim_doc['status'] == 'approved':
+        if prior_auth_doc['status'] == 'pending_provider_approval':
+            db.payers.update_one({'_id': payer_obj_id}, {'$push': {'pending_cases': auth_id}})
+        elif prior_auth_doc['status'] == 'approved':
             db.payers.update_one({'_id': payer_obj_id}, {
-                '$push': {'approved_cases': cid},
+                '$push': {'approved_cases': auth_id},
                 '$inc': {
-                    'total_amount_paid': claim_doc['amount_reimbursed'],
-                    'payer_balance_left': -claim_doc['amount_reimbursed']
+                    'total_amount_paid': prior_auth_doc['amount_reimbursed'],
+                    'payer_balance_left': -prior_auth_doc['amount_reimbursed']
                 }
             })
 
